@@ -1,0 +1,153 @@
+version: '3'
+
+# Beyz Backup task runner. Requires go-task (https://taskfile.dev).
+# Targets marked [Sx-Tyy] are stubs that print their owning task until that
+# Sprint 1 task is implemented.
+
+vars:
+  MODULE: github.com/beyzbackup/beyz-backup
+  PKG_BUILDINFO: '{{.MODULE}}/internal/buildinfo'
+  BIN_DIR: dist
+  EXE: '{{if eq OS "windows"}}.exe{{end}}'
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo "0.0.0-dev"
+  COMMIT:
+    sh: git rev-parse --short HEAD 2>/dev/null || echo "unknown"
+  DATE:
+    sh: date -u +%Y-%m-%dT%H:%M:%SZ
+  LDFLAGS: >-
+    -s -w
+    -X {{.PKG_BUILDINFO}}.Version={{.VERSION}}
+    -X {{.PKG_BUILDINFO}}.Commit={{.COMMIT}}
+    -X {{.PKG_BUILDINFO}}.Date={{.DATE}}
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  build:
+    desc: Build agent and updater for the host platform
+    deps: [build:agent, build:updater]
+
+  build:agent:
+    desc: Build beyz-backup-agent
+    cmds:
+      - go build -trimpath -ldflags "{{.LDFLAGS}}" -o {{.BIN_DIR}}/beyz-backup-agent{{.EXE}} ./cmd/agent
+
+  build:updater:
+    desc: Build beyz-backup-updater
+    cmds:
+      - go build -trimpath -ldflags "{{.LDFLAGS}}" -o {{.BIN_DIR}}/beyz-backup-updater{{.EXE}} ./cmd/updater
+
+  run:agent:
+    desc: Run the agent scaffold (pass args after --)
+    cmds:
+      - go run ./cmd/agent {{.CLI_ARGS}}
+
+  run:updater:
+    desc: Run the updater scaffold (pass args after --)
+    cmds:
+      - go run ./cmd/updater {{.CLI_ARGS}}
+
+  test:
+    desc: Run unit tests
+    cmds:
+      - go test ./...
+
+  test:race:
+    desc: Run unit tests with the race detector
+    cmds:
+      - go test -race ./...
+
+  cover:
+    desc: Run tests with coverage and print a function summary
+    cmds:
+      - go test -coverprofile=coverage.out ./...
+      - go tool cover -func=coverage.out
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  fmt:
+    desc: Format the codebase with gofmt -s
+    cmds:
+      - gofmt -s -w .
+
+  lint:
+    desc: Run golangci-lint (must be installed; pinned in CI)
+    cmds:
+      - golangci-lint run ./...
+
+  tidy:
+    desc: Tidy go.mod / go.sum
+    cmds:
+      - go mod tidy
+
+  spec:lint:
+    desc: '[S1-T02] Validate the OpenAPI control-plane spec (Redocly — canonical gate)'
+    cmds:
+      # Redocly is the canonical validator: it is fully OpenAPI 3.1-aware. Spectral
+      # currently crashes on 3.1 `type: [..., "null"]` nodes (nimma bug), so it is
+      # not used as the gate.
+      - npx --yes @redocly/cli@latest lint api/openapi.yaml
+
+  spec:mock:
+    desc: '[S1-T02] Boot a Prism mock of the control-plane spec on :4010'
+    cmds:
+      - npx --yes @stoplight/prism-cli@latest mock api/openapi.yaml -p 4010
+
+  gen:
+    desc: 'Regenerate all generated artifacts from their sources of truth'
+    deps: [gen:proto, gen:config]
+
+  gen:config:
+    desc: '[S1-T07] Regenerate configs/config.schema.json from the embedded source of truth'
+    cmds:
+      - cp internal/agent/config/config.schema.json configs/config.schema.json
+
+  gen:proto:
+    desc: '[S1-T03] Generate pkg/proto from api/openapi.yaml (3.1->3.0 down-convert -> oapi-codegen)'
+    cmds:
+      # oapi-codegen does not yet support OpenAPI 3.1, so the 3.1 source of truth
+      # is deterministically down-converted to a TRANSIENT 3.0 doc (api/.gen/,
+      # gitignored) and fed to oapi-codegen. api/openapi.yaml stays the single
+      # source of truth; pkg/proto/*.gen.go is generated and never hand-edited.
+      - mkdir -p api/.gen
+      - npx --yes @apiture/openapi-down-convert@0.14.2 --input api/openapi.yaml --output api/.gen/openapi.v3.0.yaml
+      - go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.4.1 --config api/oapi-codegen.yaml api/.gen/openapi.v3.0.yaml
+
+  check:generated:
+    desc: '[S1-T03] Fail if generated code drifts from the spec (CI drift gate)'
+    cmds:
+      - task gen:proto
+      - git diff --exit-code -- pkg/proto go.mod go.sum
+
+  contract:
+    desc: '[S1-T28] Contract tests against the mock SaaS (Prism/Schemathesis)'
+    cmds:
+      - echo "contract is implemented in S1-T28"
+
+  cross:
+    desc: '[S1-T20/T30] Cross-compile windows/amd64 + linux/amd64,arm64'
+    cmds:
+      - echo "cross is implemented in S1-T20/S1-T30"
+
+  dist:
+    desc: '[S1-T30] Produce signed distributable artifacts'
+    cmds:
+      - echo "dist is implemented in S1-T30"
+
+  installer:
+    desc: '[S1-T29] Build the Inno Setup installer'
+    cmds:
+      - echo "installer is implemented in S1-T29"
+
+  clean:
+    desc: Remove build and coverage output
+    cmds:
+      - rm -rf {{.BIN_DIR}} coverage.out

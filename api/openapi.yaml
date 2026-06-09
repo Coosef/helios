@@ -1,0 +1,1337 @@
+openapi: 3.1.0
+
+info:
+  title: Beyz Backup — Agent Control-Plane API
+  version: 1.0.0
+  summary: Agent-to-SaaS control-plane contract (Sprint 1, committed source of truth).
+  description: |
+    The versioned control-plane API the Beyz Backup agent calls. This document is
+    the **committed source of truth** (ADR-004 / ARCH-1): the Go client is
+    generated from it (S1-T03) and a Prism mock validates the agent against it
+    before the real SaaS backend exists (Sprint 2).
+
+    Cross-cutting rules (ADR-004):
+      * Every path is under `/v1/`.
+      * Every request carries `X-Agent-Version` and `X-Protocol-Version`.
+      * Non-enroll endpoints authenticate with `Authorization: Bearer <agent_session_token>`.
+        `/v1/enroll` is pre-authenticated: its credential is the in-body, single-use
+        `enrollment_token` (ADR-003).
+      * The server returns `426 Upgrade Required` below the supported version floor.
+      * Errors use RFC 7807 (obsoleted by RFC 9457) `application/problem+json`.
+      * All request/response objects are forward-compatible envelopes: unknown
+        fields MUST be ignored (`additionalProperties: true`) and reserved fields
+        are present (nullable) from day one, so later sprints add no wire break.
+
+    Sprint 1 scope: this contract is frozen now; the SaaS implements it in Sprint 2.
+    Secret values (`enrollment_token`, `agent_session_token`, key material) MUST
+    never be logged.
+  contact:
+    name: Beyz Backup Engineering
+    url: https://beyzbackup.com
+  license:
+    name: Proprietary — (c) Beyz Backup
+    url: https://beyzbackup.com/legal
+
+servers:
+  - url: https://api.beyzbackup.com
+    description: Production control-plane (paths are versioned under /v1/).
+  - url: http://127.0.0.1:4010
+    description: Local Prism mock server (S1-T28).
+
+tags:
+  - name: Enrollment
+    description: One-time device enrollment (pre-auth; the credential is issued here).
+  - name: Lifecycle
+    description: Credential / certificate renewal and device-fact confirmation.
+  - name: Heartbeat
+    description: Liveness / presence and server-directed cadence.
+  - name: Tasks
+    description: Task polling and the lease / ack / status round-trip (noop only in Sprint 1).
+
+# Applies to every operation unless overridden (e.g. /v1/enroll sets `security: []`).
+security:
+  - agentSessionToken: []
+
+paths:
+  /v1/enroll:
+    post:
+      operationId: enrollAgent
+      tags: [Enrollment]
+      summary: Consume a single-use enrollment token and issue the device credential.
+      description: |
+        Pre-authenticated endpoint. The single-use `enrollment_token` is supplied
+        in the request body and is the credential for this call only; no
+        `agent_session_token` exists yet. On success the server consumes the token
+        atomically, mints an opaque `device_id`, signs the agent certificate from
+        the submitted CSR, binds the immutable `tenant_id` / `parent_org_id` /
+        `region`, and returns the `agent_session_token` used by all other endpoints
+        (ADR-001, ADR-003, ADR-004). The token MUST never be logged.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/XAgentVersion'
+        - $ref: '#/components/parameters/XProtocolVersion'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrollRequest'
+            examples:
+              escrowedDefault:
+                summary: Successful enrollment request (Escrowed Recovery, the default)
+                value:
+                  enrollment_token: bzt_2f8c1d6e9a4b7c0d3e5f1a2b3c4d5e6f
+                  device_guid: 9d8f7a6b-5c4d-4e3f-8a1b-0c9d8e7f6a5b
+                  csr_pem: |
+                    -----BEGIN CERTIFICATE REQUEST-----
+                    MIIBVTCB/QIBADAW... (truncated for readability) ...QABoAAwCgYI
+                    -----END CERTIFICATE REQUEST-----
+                  spki_sha256: sha256:b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9
+                  recovery_policy: escrowed
+                  recovery_material_ack: false
+                  recovery_kdf_params: null
+                  tenant_id: tnt_01ABCDEF2345
+                  parent_org_id: msp_01QRSTU67890
+                  region: eu-central-1
+                  agent_version: 1.0.0
+                  supported_format_versions:
+                    manifest: 1
+                    chunk: 1
+                    crypto_envelope: 1
+                  fingerprint:
+                    machine_guid_sha256: sha256:5f78c33274e43fa9de5659265c1d917e25c03722dcb0b8d27db8d5feaa813953
+                    primary_disk_serial_sha256: sha256:0b7f849446d3383546d15a480966084442cd2193b3cab8993740b4a6627a724f
+                    first_nic_mac_sha256: sha256:8d2e1f0a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f
+                    os: windows
+                    os_version: 10.0.19045
+              zeroKnowledge:
+                summary: Zero-Knowledge mode (recovery material captured and acknowledged)
+                value:
+                  enrollment_token: bzt_7a1b2c3d4e5f60718293a4b5c6d7e8f9
+                  device_guid: 1a2b3c4d-5e6f-4071-8293-a4b5c6d7e8f9
+                  csr_pem: |
+                    -----BEGIN CERTIFICATE REQUEST-----
+                    MIIBVTCB/QIBADAW... (truncated) ...QABoAAwCgYI
+                    -----END CERTIFICATE REQUEST-----
+                  recovery_policy: zero_knowledge
+                  recovery_material_ack: true
+                  recovery_kdf_params:
+                    algorithm: argon2id
+                    memory_kib: 65536
+                    iterations: 3
+                    parallelism: 1
+                    salt_b64: c29tZS1yYW5kb20tc2FsdC0xMjM0
+                  tenant_id: tnt_01ABCDEF2345
+                  parent_org_id: null
+                  region: eu-central-1
+                  agent_version: 1.0.0
+                  supported_format_versions:
+                    manifest: 1
+                    chunk: 1
+                    crypto_envelope: 1
+                  fingerprint:
+                    machine_guid_sha256: sha256:5f78c33274e43fa9de5659265c1d917e25c03722dcb0b8d27db8d5feaa813953
+                    primary_disk_serial_sha256: sha256:1a3f7c9e2d4b6a8c0e2f4a6c8e0b2d4f6a8c0e2f4a6c8e0b2d4f6a8c0e2f4a6c
+                    first_nic_mac_sha256: sha256:9b8a7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b
+                    os: linux
+                    os_version: 6.8.0
+      responses:
+        '201':
+          description: Token consumed; device credential issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrollResponse'
+              examples:
+                success:
+                  summary: Successful enrollment response
+                  value:
+                    device_id: dev_01HXYZ2345ABCD
+                    tenant_id: tnt_01ABCDEF2345
+                    parent_org_id: msp_01QRSTU67890
+                    region: eu-central-1
+                    recovery_policy: escrowed
+                    agent_certificate_pem: |
+                      -----BEGIN CERTIFICATE-----
+                      MIIDazCCAlOgAwIBAgI... (truncated) ...8nQ0Vd
+                      -----END CERTIFICATE-----
+                    ca_chain_pem: |
+                      -----BEGIN CERTIFICATE-----
+                      MIIDQTCCAimgAwIBAgI... (truncated) ...kF1bQ
+                      -----END CERTIFICATE-----
+                    cert_not_after: '2026-07-08T00:00:00Z'
+                    agent_session_token: ast_7f3a9c2e5b8d1046a2c4e6f8b0d2f4a6
+                    session_token_expires_at: '2026-06-09T12:00:00Z'
+                    license_blob: null
+                    key_id: null
+                    key_wrap_version: null
+                    wrapped_device_key: null
+                    next_heartbeat_seconds: 60
+                    next_task_poll_seconds: 300
+                    poll_jitter_pct: 20
+                    server_time: '2026-06-08T12:00:00Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/TokenConsumed'
+        '422':
+          $ref: '#/components/responses/ValidationProblem'
+        '426':
+          $ref: '#/components/responses/UpgradeRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/Problem'
+
+  /v1/agents/{device_id}/register:
+    post:
+      operationId: registerAgent
+      tags: [Lifecycle]
+      summary: Confirm device facts and renew the certificate / session token.
+      description: |
+        Confirms the enrolled device's facts and is the **certificate renewal**
+        endpoint (Technical Design §0.2): when the cert approaches `cert_not_after`,
+        the agent submits a fresh CSR here and receives a renewed certificate and a
+        rotated `agent_session_token`, with no enrollment-format change. Idempotent
+        via `Idempotency-Key`.
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdPath'
+        - $ref: '#/components/parameters/XAgentVersion'
+        - $ref: '#/components/parameters/XProtocolVersion'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            examples:
+              renew:
+                summary: Certificate renewal with a fresh CSR
+                value:
+                  device_guid: 9d8f7a6b-5c4d-4e3f-8a1b-0c9d8e7f6a5b
+                  csr_pem: |
+                    -----BEGIN CERTIFICATE REQUEST-----
+                    MIIBVTCB/QIBADAW... (truncated) ...QABoAAwCgYI
+                    -----END CERTIFICATE REQUEST-----
+                  agent_version: 1.0.0
+                  supported_format_versions:
+                    manifest: 1
+                    chunk: 1
+                    crypto_envelope: 1
+                  fingerprint:
+                    machine_guid_sha256: sha256:5f78c33274e43fa9de5659265c1d917e25c03722dcb0b8d27db8d5feaa813953
+                    primary_disk_serial_sha256: sha256:0b7f849446d3383546d15a480966084442cd2193b3cab8993740b4a6627a724f
+                    first_nic_mac_sha256: sha256:8d2e1f0a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f
+                    os: windows
+                    os_version: 10.0.19045
+      responses:
+        '200':
+          description: Device confirmed; certificate and session token renewed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+              examples:
+                renewed:
+                  summary: Renewed credential
+                  value:
+                    device_id: dev_01HXYZ2345ABCD
+                    agent_certificate_pem: |
+                      -----BEGIN CERTIFICATE-----
+                      MIIDazCCAlOgAwIBAgI... (truncated) ...8nQ0Vd
+                      -----END CERTIFICATE-----
+                    cert_not_after: '2026-08-07T00:00:00Z'
+                    agent_session_token: ast_b1c2d3e4f5061728394a5b6c7d8e9f00
+                    session_token_expires_at: '2026-06-10T12:00:00Z'
+                    license_blob: null
+                    server_time: '2026-06-08T12:05:00Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationProblem'
+        '426':
+          $ref: '#/components/responses/UpgradeRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/Problem'
+
+  /v1/agents/{device_id}/heartbeat:
+    post:
+      operationId: sendHeartbeat
+      tags: [Heartbeat]
+      summary: Report presence/health and receive server-directed cadence.
+      description: |
+        Minimal presence payload (kept off the database hot path, SCALE-2). The
+        response carries the server-directed cadence and MAY rotate the
+        `agent_session_token` (field present only when rotated). `update_result`
+        carries the post-update health-ack used by the updater's rollback gate
+        (UPD-4).
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdPath'
+        - $ref: '#/components/parameters/XAgentVersion'
+        - $ref: '#/components/parameters/XProtocolVersion'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HeartbeatRequest'
+            examples:
+              idle:
+                summary: Idle heartbeat
+                value:
+                  protocol_version: 1
+                  agent_version: 1.0.0
+                  status: idle
+                  health:
+                    service_state: running
+                    last_error: null
+                    disk_free_pct: 42
+                    connectivity: ok
+                  reported_usage_bytes: null
+                  license_state: null
+      responses:
+        '200':
+          description: Heartbeat accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HeartbeatResponse'
+              examples:
+                steady:
+                  summary: Steady-state heartbeat response (no token rotation — token fields omitted)
+                  value:
+                    next_heartbeat_seconds: 60
+                    next_task_poll_seconds: 300
+                    poll_jitter_pct: 20
+                    work_available: false
+                    hold_seconds: 0
+                    license_blob: null
+                    min_supported_version: 1.0.0
+                    min_supported_protocol: 1
+                    server_time: '2026-06-08T12:01:00Z'
+                rotated:
+                  summary: Heartbeat response that rotates the agent_session_token
+                  value:
+                    next_heartbeat_seconds: 60
+                    next_task_poll_seconds: 300
+                    poll_jitter_pct: 20
+                    work_available: true
+                    hold_seconds: 0
+                    agent_session_token: ast_NEW9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d
+                    session_token_expires_at: '2026-06-10T12:00:00Z'
+                    license_blob: null
+                    min_supported_version: 1.0.0
+                    min_supported_protocol: 1
+                    server_time: '2026-06-08T12:01:00Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '426':
+          $ref: '#/components/responses/UpgradeRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/Problem'
+
+  /v1/agents/{device_id}/tasks:
+    get:
+      operationId: pollTasks
+      tags: [Tasks]
+      summary: Poll for work (returns an empty list or placeholder tasks in Sprint 1).
+      description: |
+        Returns a forward-compatible task envelope list. In Sprint 1 the server
+        returns either no tasks or the placeholder `noop` / `update_check` task
+        envelopes; only `noop` participates in the ack/status round-trip. The
+        cadence (`next_poll_seconds`) and `work_available` reserve the migration
+        path to long-poll/push (SCALE-3).
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdPath'
+        - $ref: '#/components/parameters/XAgentVersion'
+        - $ref: '#/components/parameters/XProtocolVersion'
+        - $ref: '#/components/parameters/MaxTasks'
+      responses:
+        '200':
+          description: Current task list (possibly empty).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TasksResponse'
+              examples:
+                noTasks:
+                  summary: No-task polling response
+                  value:
+                    tasks: []
+                    work_available: false
+                    next_poll_seconds: 300
+                    poll_jitter_pct: 20
+                    server_time: '2026-06-08T12:02:00Z'
+                noopTask:
+                  summary: A single noop task (smoke-tests the lease/ack/status round-trip)
+                  value:
+                    tasks:
+                      - task_id: tsk_01NOOP2345
+                        type: noop
+                        schema_version: 1
+                        sequence: 1
+                        lease_seconds: 300
+                        created_at: '2026-06-08T12:02:00Z'
+                        payload: {}
+                        update_check: null
+                    work_available: true
+                    next_poll_seconds: 60
+                    poll_jitter_pct: 20
+                    server_time: '2026-06-08T12:02:00Z'
+                updateCheckPlaceholder:
+                  summary: Reserved update_check placeholder (NOT dispatched/acked in Sprint 1)
+                  value:
+                    tasks:
+                      - task_id: tsk_01UPDCHK678
+                        type: update_check
+                        schema_version: 1
+                        sequence: 2
+                        lease_seconds: 300
+                        created_at: '2026-06-08T12:02:00Z'
+                        payload: {}
+                        update_check:
+                          target_version: 1.4.0
+                          rollout_cohort_pct: 10
+                          update_allowed: true
+                    work_available: true
+                    next_poll_seconds: 60
+                    poll_jitter_pct: 20
+                    server_time: '2026-06-08T12:02:00Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '426':
+          $ref: '#/components/responses/UpgradeRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/Problem'
+
+  /v1/agents/{device_id}/tasks/{task_id}/ack:
+    post:
+      operationId: ackTask
+      tags: [Tasks]
+      summary: Acknowledge/claim a task (noop round-trip only in Sprint 1).
+      description: |
+        Claims a task and starts/refreshes its lease. Idempotent: re-acking an
+        already-acked task returns `200`, not an error. Sprint 1 supports the
+        `noop` task type only.
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdPath'
+        - $ref: '#/components/parameters/TaskIdPath'
+        - $ref: '#/components/parameters/XAgentVersion'
+        - $ref: '#/components/parameters/XProtocolVersion'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskAckRequest'
+            examples:
+              ackNoop:
+                summary: Acknowledge a noop task
+                value:
+                  acknowledged_at: '2026-06-08T12:02:01Z'
+      responses:
+        '200':
+          description: Task acknowledged; lease started/refreshed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskAckResponse'
+              examples:
+                acked:
+                  summary: noop task acked
+                  value:
+                    task_id: tsk_01NOOP2345
+                    status: acked
+                    lease_expires_at: '2026-06-08T12:07:01Z'
+                    server_time: '2026-06-08T12:02:01Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '426':
+          $ref: '#/components/responses/UpgradeRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/Problem'
+
+  /v1/agents/{device_id}/tasks/{task_id}/status:
+    post:
+      operationId: reportTaskStatus
+      tags: [Tasks]
+      summary: Report terminal/progress status for a task (noop round-trip only in Sprint 1).
+      description: |
+        Reports task progress or a terminal outcome; last-write-wins. Sprint 1
+        supports the `noop` task type only. Emitted through the audit schema
+        server-side (S1-T09).
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdPath'
+        - $ref: '#/components/parameters/TaskIdPath'
+        - $ref: '#/components/parameters/XAgentVersion'
+        - $ref: '#/components/parameters/XProtocolVersion'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskStatusRequest'
+            examples:
+              succeeded:
+                summary: noop task succeeded
+                value:
+                  status: succeeded
+                  detail: noop completed
+                  progress_pct: 100
+      responses:
+        '200':
+          description: Status recorded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskStatusResponse'
+              examples:
+                recorded:
+                  summary: Status recorded
+                  value:
+                    task_id: tsk_01NOOP2345
+                    recorded: true
+                    server_time: '2026-06-08T12:02:02Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationProblem'
+        '426':
+          $ref: '#/components/responses/UpgradeRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/Problem'
+
+components:
+
+  securitySchemes:
+    agentSessionToken:
+      type: http
+      scheme: bearer
+      bearerFormat: ast
+      description: |
+        Bearer `agent_session_token` (prefix `ast_`) issued at enrollment and
+        rotated via heartbeat/register. Treat as a secret; never log it.
+
+  parameters:
+    XAgentVersion:
+      name: X-Agent-Version
+      in: header
+      required: true
+      description: Agent semantic version (ADR-004); injected at build time via ldflags.
+      schema:
+        $ref: '#/components/schemas/AgentVersion'
+    XProtocolVersion:
+      name: X-Protocol-Version
+      in: header
+      required: true
+      description: Control-plane protocol version (ADR-004).
+      schema:
+        $ref: '#/components/schemas/ProtocolVersion'
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Optional client-generated key so mutating calls can be retried safely.
+      schema:
+        type: string
+        format: uuid
+    DeviceIdPath:
+      name: device_id
+      in: path
+      required: true
+      description: Server-issued opaque device identifier (ADR-003).
+      schema:
+        $ref: '#/components/schemas/DeviceId'
+    TaskIdPath:
+      name: task_id
+      in: path
+      required: true
+      description: Task identifier.
+      schema:
+        type: string
+        pattern: '^tsk_[A-Za-z0-9]+$'
+        examples:
+          - tsk_01NOOP2345
+    MaxTasks:
+      name: max
+      in: query
+      required: false
+      description: Maximum number of tasks to return.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 10
+
+  responses:
+    Unauthorized:
+      description: Missing, expired, or revoked credential (RFC 7807).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemJson'
+          examples:
+            invalidSessionToken:
+              summary: 401 Unauthorized
+              value:
+                type: https://api.beyzbackup.com/problems/unauthorized
+                title: Unauthorized
+                status: 401
+                detail: The agent_session_token is missing, expired, or revoked.
+                instance: /v1/agents/dev_01HXYZ2345ABCD/heartbeat
+                code: invalid_session_token
+    Forbidden:
+      description: Authenticated but not permitted for this tenant/device (RFC 7807).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemJson'
+          examples:
+            tenantMismatch:
+              summary: 403 Forbidden
+              value:
+                type: https://api.beyzbackup.com/problems/forbidden
+                title: Forbidden
+                status: 403
+                detail: The credential is not authorized for this device.
+                instance: /v1/agents/dev_01HXYZ2345ABCD/heartbeat
+                code: tenant_authorization_failed
+    NotFound:
+      description: The referenced resource does not exist (RFC 7807).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemJson'
+          examples:
+            taskNotFound:
+              summary: 404 Not Found
+              value:
+                type: https://api.beyzbackup.com/problems/not-found
+                title: Not Found
+                status: 404
+                detail: No task with the given id exists for this device.
+                instance: /v1/agents/dev_01HXYZ2345ABCD/tasks/tsk_unknown/ack
+                code: task_not_found
+    TokenConsumed:
+      description: The enrollment token was already consumed or revoked (RFC 7807).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemJson'
+          examples:
+            alreadyConsumed:
+              summary: 409 Conflict — token already consumed
+              value:
+                type: https://api.beyzbackup.com/problems/token-already-consumed
+                title: Conflict
+                status: 409
+                detail: This enrollment token has already been consumed.
+                instance: /v1/enroll
+                code: token_already_consumed
+    ValidationProblem:
+      description: Malformed request (e.g. invalid CSR or fingerprint) (RFC 7807).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemJson'
+          examples:
+            badCsr:
+              summary: 422 Unprocessable Entity
+              value:
+                type: https://api.beyzbackup.com/problems/validation
+                title: Unprocessable Entity
+                status: 422
+                detail: The submitted csr_pem could not be parsed.
+                instance: /v1/enroll
+                code: invalid_csr
+    UpgradeRequired:
+      description: |
+        The agent is below the supported protocol/version floor (ADR-004). The
+        agent MUST stop calling and route to the updater. `min_supported_version`
+        and `min_supported_protocol` are RFC 7807 extension members.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemJson'
+          examples:
+            upgradeRequired:
+              summary: 426 Upgrade Required
+              value:
+                type: https://api.beyzbackup.com/problems/upgrade-required
+                title: Upgrade Required
+                status: 426
+                detail: Agent version is below the supported floor; update required.
+                instance: /v1/agents/dev_01HXYZ2345ABCD/heartbeat
+                code: agent_upgrade_required
+                min_supported_version: 1.2.0
+                min_supported_protocol: 1
+    RateLimited:
+      description: Too many requests; back off per `Retry-After` (RFC 7807).
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying.
+          schema:
+            type: integer
+            minimum: 0
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemJson'
+          examples:
+            rateLimited:
+              summary: 429 Too Many Requests
+              value:
+                type: https://api.beyzbackup.com/problems/rate-limited
+                title: Too Many Requests
+                status: 429
+                detail: Enrollment endpoint is rate-limited; retry after the indicated delay.
+                instance: /v1/enroll
+                code: rate_limited
+    Problem:
+      description: Unexpected error (RFC 7807).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemJson'
+          examples:
+            serverError:
+              summary: Generic problem
+              value:
+                type: https://api.beyzbackup.com/problems/internal
+                title: Internal Server Error
+                status: 500
+                detail: An unexpected error occurred.
+                instance: /v1/agents/dev_01HXYZ2345ABCD/heartbeat
+                code: internal_error
+
+  schemas:
+
+    # ----- Required scalar / identity components (S1-T02 req 12) -----
+
+    DeviceId:
+      type: string
+      description: Server-issued opaque device identifier (NOT a hardware hash; ADR-003).
+      pattern: '^dev_[A-Za-z0-9]+$'
+      minLength: 5
+      maxLength: 64
+      examples:
+        - dev_01HXYZ2345ABCD
+
+    TenantId:
+      type: string
+      description: Immutable tenant identifier, bound into the agent certificate (ADR-003).
+      pattern: '^tnt_[A-Za-z0-9]+$'
+      minLength: 5
+      maxLength: 64
+      examples:
+        - tnt_01ABCDEF2345
+
+    ParentOrgId:
+      type: [string, 'null']
+      description: MSP parent-organization identifier; null for direct tenants (ADR-003, LIC-6).
+      pattern: '^msp_[A-Za-z0-9]+$'
+      examples:
+        - msp_01QRSTU67890
+
+    Region:
+      type: string
+      description: |
+        Data-residency region for the tenant/device (REV-5). Free-form region code;
+        the effective region is confirmed by the server in the enrollment response.
+      minLength: 2
+      maxLength: 32
+      examples:
+        - eu-central-1
+        - us-east-1
+
+    EnrollmentToken:
+      type: string
+      format: password
+      writeOnly: true
+      description: |
+        Single-use, short-TTL, tenant-scoped enrollment credential (ADR-003, SEC-2).
+        >=128-bit CSPRNG, prefix `bzt_`. MUST never be logged or placed in a URL.
+      pattern: '^bzt_[A-Za-z0-9]{24,}$'
+      examples:
+        - bzt_2f8c1d6e9a4b7c0d3e5f1a2b3c4d5e6f
+
+    RecoveryPolicy:
+      type: string
+      description: |
+        Encryption recovery model (ADR-001). `escrowed` is the default (recoverable
+        via SaaS-escrowed KEK); `zero_knowledge` derives the KEK from a
+        customer-held recovery secret captured at enrollment.
+      enum: [escrowed, zero_knowledge]
+      default: escrowed
+
+    UpdateResult:
+      type: string
+      description: |
+        Post-update self-report the agent sends in a heartbeat to drive the
+        updater's rollback health-gate (UPD-4). Allowed values are `ok` or
+        `failed`. OPTIONAL: omitted (field absent) when not reporting an update
+        outcome — there is no null/unset member.
+      enum: [ok, failed]
+      x-enum-varnames: [UpdateResultOk, UpdateResultFailed]
+
+    AgentVersion:
+      type: string
+      description: Agent semantic version (ADR-004).
+      pattern: '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$'
+      examples:
+        - 1.0.0
+        - 1.4.0
+
+    ProtocolVersion:
+      type: integer
+      description: Control-plane protocol version (ADR-004).
+      minimum: 1
+      examples:
+        - 1
+
+    AgentSessionToken:
+      type: string
+      format: password
+      description: |
+        Bearer session credential (prefix `ast_`) used on all non-enroll endpoints
+        (Technical Design §0.2). 24h TTL, rotated via heartbeat/register. Secret;
+        never log it.
+      pattern: '^ast_[A-Za-z0-9]{24,}$'
+      examples:
+        - ast_7f3a9c2e5b8d1046a2c4e6f8b0d2f4a6
+
+    LicenseBlob:
+      type: [object, 'null']
+      additionalProperties: true
+      description: |
+        Server-signed, offline-verifiable license blob (LIC-1/4). Reserved/null in
+        Sprint 1; verified by the agent against an embedded public key in a later
+        sprint.
+      properties:
+        encoding:
+          type: string
+          enum: [base64]
+        value:
+          type: string
+          description: Base64 of the signed license token.
+        key_id:
+          type: string
+        signature_alg:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+
+    TaskEnvelope:
+      type: object
+      additionalProperties: true
+      description: Forward-compatible task envelope; frozen shape (SCALE-9, UPD-5).
+      required: [task_id, type, schema_version, sequence]
+      properties:
+        task_id:
+          type: string
+          pattern: '^tsk_[A-Za-z0-9]+$'
+        type:
+          type: string
+          description: Task type. Sprint 1 dispatches/acks `noop` only.
+          enum: [noop, config_refresh, update_check]
+        schema_version:
+          type: integer
+          minimum: 1
+        sequence:
+          type: integer
+          description: Per-agent monotonic ordering value.
+          minimum: 0
+        lease_seconds:
+          type: integer
+          description: Visibility timeout once acked.
+          minimum: 1
+        created_at:
+          type: string
+          format: date-time
+        payload:
+          type: object
+          additionalProperties: true
+          description: Type-specific payload (empty for noop).
+        update_check:
+          type: [object, 'null']
+          additionalProperties: true
+          description: |
+            Reserved server-directed rollout fields for `update_check` (UPD-5).
+            Null for other task types. NOT dispatched in Sprint 1.
+          properties:
+            target_version:
+              $ref: '#/components/schemas/AgentVersion'
+            rollout_cohort_pct:
+              type: integer
+              minimum: 0
+              maximum: 100
+            update_allowed:
+              type: boolean
+
+    ProblemJson:
+      type: object
+      additionalProperties: true
+      description: |
+        RFC 7807 (obsoleted by RFC 9457) problem detail. Served as
+        `application/problem+json`. Extension members (e.g. `code`,
+        `min_supported_version`) are permitted.
+      properties:
+        type:
+          type: string
+          format: uri
+          default: about:blank
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 100
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
+          description: Stable, machine-readable application error code.
+      examples:
+        - type: https://api.beyzbackup.com/problems/unauthorized
+          title: Unauthorized
+          status: 401
+          detail: The agent_session_token is missing, expired, or revoked.
+          instance: /v1/agents/dev_01HXYZ2345ABCD/heartbeat
+          code: invalid_session_token
+
+    # ----- Supporting / reserved sub-schemas -----
+
+    RecoveryKdfParams:
+      type: [object, 'null']
+      additionalProperties: true
+      description: |
+        KDF parameters for Zero-Knowledge mode (ADR-001). Present (non-null) only
+        when `recovery_policy` is `zero_knowledge`. No secret/derived key material
+        is transmitted — only public KDF parameters.
+      properties:
+        algorithm:
+          type: string
+          enum: [argon2id]
+        memory_kib:
+          type: integer
+          minimum: 8192
+        iterations:
+          type: integer
+          minimum: 1
+        parallelism:
+          type: integer
+          minimum: 1
+        salt_b64:
+          type: string
+
+    SupportedFormatVersions:
+      type: object
+      additionalProperties: true
+      description: Agent-supported on-disk/on-wire format versions (BKP-7, forward-compat).
+      properties:
+        manifest:
+          type: integer
+          minimum: 1
+        chunk:
+          type: integer
+          minimum: 1
+        crypto_envelope:
+          type: integer
+          minimum: 1
+
+    HardwareSignals:
+      type: object
+      additionalProperties: true
+      description: |
+        Advisory, privacy-preserving hardware signals for clone detection only
+        (ADR-003, LIC-2). Identifying values (machine GUID, disk serial, NIC MAC)
+        are transmitted ONLY as deterministic SHA-256 hashes (`sha256:<hex>`),
+        never raw. Advisory only — never the license key or primary identity.
+      properties:
+        machine_guid_sha256:
+          type: [string, 'null']
+          description: 'sha256:<hex> of the platform machine GUID (raw value never sent).'
+        primary_disk_serial_sha256:
+          type: [string, 'null']
+          description: 'sha256:<hex> of the primary disk serial (raw value never sent).'
+        first_nic_mac_sha256:
+          type: [string, 'null']
+          description: 'sha256:<hex> of the first non-loopback NIC MAC (raw value never sent).'
+        os:
+          type: string
+          enum: [windows, linux]
+        os_version:
+          type: [string, 'null']
+
+    Health:
+      type: object
+      additionalProperties: true
+      description: Lightweight fleet-health signal (GAP-9).
+      properties:
+        service_state:
+          type: string
+          enum: [running, starting, stopping, stopped]
+        last_error:
+          type: [string, 'null']
+        disk_free_pct:
+          type: [integer, 'null']
+          minimum: 0
+          maximum: 100
+        connectivity:
+          type: string
+          enum: [ok, degraded, offline]
+
+    # ----- Request / response envelopes -----
+
+    EnrollRequest:
+      type: object
+      additionalProperties: true
+      description: |
+        Enrollment request (ADR-001, ADR-003). Forward-compatible envelope.
+        `tenant_id`/`parent_org_id` are advisory: the authoritative tenant is
+        derived server-side from the `enrollment_token`; conflicting values are
+        ignored. `region` is the requested data-residency region; the server
+        confirms the effective region in the response (REV-5).
+      required: [enrollment_token, device_guid, csr_pem, recovery_policy]
+      properties:
+        enrollment_token:
+          $ref: '#/components/schemas/EnrollmentToken'
+        device_guid:
+          type: string
+          format: uuid
+          description: Agent-generated, persisted UUIDv4 that survives reinstall (ADR-003).
+        csr_pem:
+          type: string
+          description: PEM-encoded PKCS#10 CSR for the locally-generated keypair (ADR-003).
+        spki_sha256:
+          type: string
+          description: |
+            sha256:<hex> of the agent public key's SubjectPublicKeyInfo DER (the
+            credential fingerprint; ADR-003). The server cross-checks it against
+            the CSR public key. ECDSA P-256 key.
+        recovery_policy:
+          $ref: '#/components/schemas/RecoveryPolicy'
+        recovery_material_ack:
+          type: boolean
+          default: false
+          description: |
+            MUST be true when `recovery_policy` is `zero_knowledge` (confirms the
+            customer captured the recovery secret; ADR-001).
+        recovery_kdf_params:
+          $ref: '#/components/schemas/RecoveryKdfParams'
+        tenant_id:
+          $ref: '#/components/schemas/TenantId'
+        parent_org_id:
+          $ref: '#/components/schemas/ParentOrgId'
+        region:
+          $ref: '#/components/schemas/Region'
+        agent_version:
+          $ref: '#/components/schemas/AgentVersion'
+        supported_format_versions:
+          $ref: '#/components/schemas/SupportedFormatVersions'
+        fingerprint:
+          $ref: '#/components/schemas/HardwareSignals'
+
+    EnrollResponse:
+      type: object
+      additionalProperties: true
+      description: Enrollment response — issues the device credential (ADR-003, §0.2).
+      required:
+        - device_id
+        - tenant_id
+        - region
+        - agent_certificate_pem
+        - cert_not_after
+        - agent_session_token
+        - session_token_expires_at
+        - server_time
+        - next_heartbeat_seconds
+        - next_task_poll_seconds
+      properties:
+        device_id:
+          $ref: '#/components/schemas/DeviceId'
+        tenant_id:
+          $ref: '#/components/schemas/TenantId'
+        parent_org_id:
+          $ref: '#/components/schemas/ParentOrgId'
+        region:
+          $ref: '#/components/schemas/Region'
+        recovery_policy:
+          $ref: '#/components/schemas/RecoveryPolicy'
+        agent_certificate_pem:
+          type: string
+          description: PEM agent certificate signed from the submitted CSR (ADR-003).
+        ca_chain_pem:
+          type: [string, 'null']
+          description: PEM CA chain.
+        cert_not_after:
+          type: string
+          format: date-time
+          description: Certificate expiry; renew via /register before this (§0.2).
+        agent_session_token:
+          $ref: '#/components/schemas/AgentSessionToken'
+        session_token_expires_at:
+          type: string
+          format: date-time
+        license_blob:
+          $ref: '#/components/schemas/LicenseBlob'
+        key_id:
+          type: [string, 'null']
+          description: Reserved key-material id (ADR-001); null in Sprint 1.
+        key_wrap_version:
+          type: [integer, 'null']
+          description: Reserved key-wrap version (ADR-001); null in Sprint 1.
+        wrapped_device_key:
+          type: [string, 'null']
+          description: Reserved wrapped DEK (ADR-001); null in Sprint 1.
+        next_heartbeat_seconds:
+          type: integer
+          minimum: 5
+        next_task_poll_seconds:
+          type: integer
+          minimum: 5
+        poll_jitter_pct:
+          type: integer
+          minimum: 0
+          maximum: 50
+          default: 20
+        server_time:
+          type: string
+          format: date-time
+
+    RegisterRequest:
+      type: object
+      additionalProperties: true
+      description: Device-fact confirmation and certificate-renewal request (§0.2).
+      required: [device_guid, csr_pem]
+      properties:
+        device_guid:
+          type: string
+          format: uuid
+        csr_pem:
+          type: string
+          description: Fresh CSR for certificate renewal.
+        spki_sha256:
+          type: string
+          description: 'sha256:<hex> of the agent public key SubjectPublicKeyInfo DER (ADR-003).'
+        agent_version:
+          $ref: '#/components/schemas/AgentVersion'
+        supported_format_versions:
+          $ref: '#/components/schemas/SupportedFormatVersions'
+        fingerprint:
+          $ref: '#/components/schemas/HardwareSignals'
+
+    RegisterResponse:
+      type: object
+      additionalProperties: true
+      description: Renewed certificate and rotated session token (§0.2).
+      required:
+        - device_id
+        - agent_certificate_pem
+        - cert_not_after
+        - agent_session_token
+        - session_token_expires_at
+        - server_time
+      properties:
+        device_id:
+          $ref: '#/components/schemas/DeviceId'
+        agent_certificate_pem:
+          type: string
+        cert_not_after:
+          type: string
+          format: date-time
+        agent_session_token:
+          $ref: '#/components/schemas/AgentSessionToken'
+        session_token_expires_at:
+          type: string
+          format: date-time
+        license_blob:
+          $ref: '#/components/schemas/LicenseBlob'
+        server_time:
+          type: string
+          format: date-time
+
+    HeartbeatRequest:
+      type: object
+      additionalProperties: true
+      description: Minimal presence/health payload (SCALE-2, GAP-9).
+      required: [protocol_version, agent_version, status]
+      properties:
+        protocol_version:
+          $ref: '#/components/schemas/ProtocolVersion'
+        agent_version:
+          $ref: '#/components/schemas/AgentVersion'
+        status:
+          type: string
+          enum: [idle, backing_up, restoring, updating, error]
+        health:
+          $ref: '#/components/schemas/Health'
+        reported_usage_bytes:
+          type: [integer, 'null']
+          minimum: 0
+          description: Reserved advisory metering (LIC-3); null in Sprint 1.
+        license_state:
+          type: [string, 'null']
+          description: Reserved license-state echo (LIC-1); null in Sprint 1.
+        update_result:
+          # Optional: OMITTED when not reporting (no null/unset member). Restores
+          # the {ok, failed} constraint dropped during the 3.1->3.0 codegen work
+          # (see the nullable-field contract audit).
+          $ref: '#/components/schemas/UpdateResult'
+
+    HeartbeatResponse:
+      type: object
+      additionalProperties: true
+      description: |
+        Server-directed cadence and optional session-token rotation. When
+        `agent_session_token` is non-null the agent MUST atomically replace its
+        stored token (req 9).
+      required:
+        - next_heartbeat_seconds
+        - next_task_poll_seconds
+        - work_available
+        - server_time
+      properties:
+        next_heartbeat_seconds:
+          type: integer
+          minimum: 5
+        next_task_poll_seconds:
+          type: integer
+          minimum: 5
+        poll_jitter_pct:
+          type: integer
+          minimum: 0
+          maximum: 50
+        work_available:
+          type: boolean
+          description: Hint to poll tasks sooner; reserves the long-poll/push migration (SCALE-3).
+        hold_seconds:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Reserved long-poll hint; 0 in Sprint 1.
+        agent_session_token:
+          $ref: '#/components/schemas/AgentSessionToken'
+        session_token_expires_at:
+          type: [string, 'null']
+          format: date-time
+        license_blob:
+          $ref: '#/components/schemas/LicenseBlob'
+        min_supported_version:
+          $ref: '#/components/schemas/AgentVersion'
+        min_supported_protocol:
+          $ref: '#/components/schemas/ProtocolVersion'
+        server_time:
+          type: string
+          format: date-time
+
+    TasksResponse:
+      type: object
+      additionalProperties: true
+      description: Task-poll response; forward-compatible (SCALE-3/9).
+      required: [tasks, work_available, next_poll_seconds, server_time]
+      properties:
+        tasks:
+          type: array
+          description: Empty or placeholder tasks in Sprint 1.
+          items:
+            $ref: '#/components/schemas/TaskEnvelope'
+        work_available:
+          type: boolean
+        next_poll_seconds:
+          type: integer
+          minimum: 5
+        poll_jitter_pct:
+          type: integer
+          minimum: 0
+          maximum: 50
+        server_time:
+          type: string
+          format: date-time
+
+    TaskAckRequest:
+      type: object
+      additionalProperties: true
+      description: Optional ack metadata.
+      properties:
+        acknowledged_at:
+          type: string
+          format: date-time
+
+    TaskAckResponse:
+      type: object
+      additionalProperties: true
+      required: [task_id, status, server_time]
+      properties:
+        task_id:
+          type: string
+          pattern: '^tsk_[A-Za-z0-9]+$'
+        status:
+          type: string
+          enum: [acked]
+        lease_expires_at:
+          type: [string, 'null']
+          format: date-time
+        server_time:
+          type: string
+          format: date-time
+
+    TaskStatusRequest:
+      type: object
+      additionalProperties: true
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [accepted, in_progress, succeeded, failed, rolled_back]
+        detail:
+          type: [string, 'null']
+        progress_pct:
+          type: [integer, 'null']
+          minimum: 0
+          maximum: 100
+
+    TaskStatusResponse:
+      type: object
+      additionalProperties: true
+      required: [task_id, recorded, server_time]
+      properties:
+        task_id:
+          type: string
+          pattern: '^tsk_[A-Za-z0-9]+$'
+        recorded:
+          type: boolean
+        server_time:
+          type: string
+          format: date-time

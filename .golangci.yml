@@ -1,0 +1,52 @@
+# golangci-lint configuration (v2 schema). CI pins golangci-lint v2.x (S1-T31).
+# Security-first per CLAUDE.md: gosec is a required, non-bypassable gate.
+version: "2"
+
+run:
+  timeout: 5m
+  go: "1.23"
+
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - errcheck      # unchecked errors (CLAUDE.md: never skip error handling)
+    - gocritic
+    - gosec         # security issues (required gate)
+    - govet
+    - ineffassign
+    - misspell
+    - nilerr
+    - noctx
+    - revive
+    - staticcheck
+    - unused
+  settings:
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+        - style
+    revive:
+      rules:
+        - name: exported
+        - name: package-comments
+        - name: error-strings
+        - name: context-as-argument
+  exclusions:
+    rules:
+      # Tests may use relaxed crypto/error/context rules and table-driven helpers.
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
+          - noctx
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/beyzbackup/beyz-backup

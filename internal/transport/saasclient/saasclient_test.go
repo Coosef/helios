@@ -1,0 +1,248 @@
+package saasclient_test
+
+import (
+	"context"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/beyzbackup/beyz-backup/internal/transport/httpclient"
+	"github.com/beyzbackup/beyz-backup/internal/transport/saasclient"
+	"github.com/beyzbackup/beyz-backup/pkg/proto"
+)
+
+func tlsServer(t *testing.T, h http.Handler) (*httptest.Server, string) {
+	t.Helper()
+	srv := httptest.NewTLSServer(h)
+	t.Cleanup(srv.Close)
+	return srv, httpclient.PinFromCertificate(srv.Certificate())
+}
+
+func newClient(t *testing.T, srv *httptest.Server, pin string) *saasclient.Client {
+	t.Helper()
+	c, err := saasclient.New(saasclient.Options{
+		BaseURL:    srv.URL,
+		Pins:       []string{pin},
+		HTTPConfig: &httpclient.Config{MaxRetries: 0}, // keep tests fast; retry is T12's concern
+	})
+	if err != nil {
+		t.Fatalf("saasclient.New: %v", err)
+	}
+	return c
+}
+
+func writeJSON(w http.ResponseWriter, status int, contentType, body string) {
+	w.Header().Set("Content-Type", contentType)
+	w.WriteHeader(status)
+	_, _ = io.WriteString(w, body)
+}
+
+func ctx() context.Context { return context.Background() }
+
+func TestNewValidation(t *testing.T) {
+	if _, err := saasclient.New(saasclient.Options{}); err == nil {
+		t.Error("New(empty base url) should error")
+	}
+	if _, err := saasclient.New(saasclient.Options{BaseURL: "://bad", Pins: []string{"sha256:" + strings.Repeat("ab", 32)}}); err == nil {
+		t.Error("New(bad url) should error")
+	}
+	// Valid URL but no pins -> transport fails closed (ErrNoPins).
+	if _, err := saasclient.New(saasclient.Options{BaseURL: "https://api.example.com"}); err == nil {
+		t.Error("New(no pins) should fail closed")
+	}
+}
+
+func TestEnrollSuccessAndTokenCached(t *testing.T) {
+	srv, pin := tlsServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || !strings.HasSuffix(r.URL.Path, "/v1/enroll") {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		// Enroll is unauthenticated — no bearer token yet.
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Errorf("enroll must not carry Authorization, got %q", got)
+		}
+		writeJSON(w, http.StatusCreated, "application/json",
+			`{"device_id":"dev_test_1","tenant_id":"tnt_1","region":"eu","agent_session_token":"ast_enroll_tok"}`)
+	}))
+
+	c := newClient(t, srv, pin)
+	resp, err := c.Enroll(ctx(), proto.EnrollRequest{})
+	if err != nil {
+		t.Fatalf("Enroll: %v", err)
+	}
+	if resp.DeviceId != "dev_test_1" {
+		t.Errorf("device_id = %q", resp.DeviceId)
+	}
+	if c.SessionToken() != "ast_enroll_tok" {
+		t.Errorf("token not cached: %q", c.SessionToken())
+	}
+}
+
+func TestRegisterRotatesToken(t *testing.T) {
+	srv, pin := tlsServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/v1/agents/dev_9/register") {
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+		writeJSON(w, http.StatusOK, "application/json",
+			`{"device_id":"dev_9","agent_certificate_pem":"x","agent_session_token":"ast_reg_new"}`)
+	}))
+
+	c := newClient(t, srv, pin)
+	c.SetSessionToken("ast_old")
+	if _, err := c.Register(ctx(), "dev_9", proto.RegisterRequest{}); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if c.SessionToken() != "ast_reg_new" {
+		t.Errorf("token not rotated: %q", c.SessionToken())
+	}
+}
+
+func TestHeartbeatTokenRotateAndPreserve(t *testing.T) {
+	t.Run("rotates when server returns a token", func(t *testing.T) {
+		srv, pin := tlsServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, http.StatusOK, "application/json", `{"agent_session_token":"ast_hb_new"}`)
+		}))
+		c := newClient(t, srv, pin)
+		c.SetSessionToken("ast_old")
+		if _, err := c.Heartbeat(ctx(), "dev_1", proto.HeartbeatRequest{}); err != nil {
+			t.Fatal(err)
+		}
+		if c.SessionToken() != "ast_hb_new" {
+			t.Errorf("token not rotated: %q", c.SessionToken())
+		}
+	})
+	t.Run("preserves when server omits a token", func(t *testing.T) {
+		srv, pin := tlsServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, http.StatusOK, "application/json", `{"next_heartbeat_seconds":60}`)
+		}))
+		c := newClient(t, srv, pin)
+		c.SetSessionToken("ast_keep")
+		if _, err := c.Heartbeat(ctx(), "dev_1", proto.HeartbeatRequest{}); err != nil {
+			t.Fatal(err)
+		}
+		if c.SessionToken() != "ast_keep" {
+			t.Errorf("token should be preserved: %q", c.SessionToken())
+		}
+	})
+}
+
+func TestRequestConstruction(t *testing.T) {
+	var got http.Header
+	var path string
+	srv, pin := tlsServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Clone()
+		path = r.URL.Path
+		writeJSON(w, http.StatusOK, "application/json", `{}`)
+	}))
+
+	c := newClient(t, srv, pin)
+	c.SetSessionToken("ast_req_tok")
+	if _, err := c.Heartbeat(ctx(), "dev_42", proto.HeartbeatRequest{}); err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.HasSuffix(path, "/v1/agents/dev_42/heartbeat") {
+		t.Errorf("path = %q, want .../v1/agents/dev_42/heartbeat", path)
+	}
+	if got.Get("Authorization") != "Bearer ast_req_tok" {
+		t.Errorf("Authorization = %q (must use the cached token)", got.Get("Authorization"))
+	}
+	if got.Get("X-Agent-Version") == "" || got.Get("X-Protocol-Version") == "" {
+		t.Errorf("version headers missing (T12 injection): %v", got)
+	}
+}
+
+func TestUnauthorizedPropagates(t *testing.T) {
+	srv, pin := tlsServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusUnauthorized, "application/problem+json",
+			`{"title":"Unauthorized","code":"AUTH_EXPIRED","detail":"session token expired"}`)
+	}))
+	c := newClient(t, srv, pin)
+	c.SetSessionToken("ast_expired")
+	if _, err := c.Heartbeat(ctx(), "dev_1", proto.HeartbeatRequest{}); !errors.Is(err, saasclient.ErrUnauthorized) {
+		t.Errorf("err = %v, want ErrUnauthorized", err)
+	}
+}
+
+func TestUpgradeRequiredPropagates(t *testing.T) {
+	srv, pin := tlsServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusUpgradeRequired, "application/problem+json",
+			`{"title":"Upgrade Required","min_supported_version":3}`)
+	}))
+	c := newClient(t, srv, pin)
+	if _, err := c.Heartbeat(ctx(), "dev_1", proto.HeartbeatRequest{}); !errors.Is(err, saasclient.ErrUpgradeRequired) {
+		t.Errorf("err = %v, want ErrUpgradeRequired", err)
+	}
+}
+
+func TestUnexpectedStatusPropagates(t *testing.T) {
+	srv, pin := tlsServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusInternalServerError, "application/problem+json", `{"title":"boom"}`)
+	}))
+	c := newClient(t, srv, pin)
+	if _, err := c.Heartbeat(ctx(), "dev_1", proto.HeartbeatRequest{}); !errors.Is(err, saasclient.ErrUnexpectedStatus) {
+		t.Errorf("err = %v, want ErrUnexpectedStatus", err)
+	}
+}
+
+func TestEmptyBodyOn2xx(t *testing.T) {
+	// A 2xx with a non-JSON content-type leaves the typed body nil.
+	srv, pin := tlsServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, "text/plain", "not json")
+	}))
+	c := newClient(t, srv, pin)
+	if _, err := c.Heartbeat(ctx(), "dev_1", proto.HeartbeatRequest{}); !errors.Is(err, saasclient.ErrEmptyBody) {
+		t.Errorf("err = %v, want ErrEmptyBody", err)
+	}
+}
+
+func TestNonJSONErrorBodyFallback(t *testing.T) {
+	srv, pin := tlsServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusBadGateway, "text/plain", "upstream exploded")
+	}))
+	c := newClient(t, srv, pin)
+	_, err := c.PollTasks(ctx(), "dev_1")
+	if !errors.Is(err, saasclient.ErrUnexpectedStatus) {
+		t.Fatalf("err = %v, want ErrUnexpectedStatus", err)
+	}
+	if !strings.Contains(err.Error(), "upstream exploded") {
+		t.Errorf("error should include the raw body fallback: %v", err)
+	}
+}
+
+func TestResponseParsing(t *testing.T) {
+	srv, pin := tlsServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/tasks"):
+			writeJSON(w, http.StatusOK, "application/json",
+				`{"tasks":[{"task_id":"tsk_1","type":"backup"}],"work_available":true,"next_poll_seconds":120,"server_time":"2026-06-09T00:00:00Z"}`)
+		case strings.HasSuffix(r.URL.Path, "/ack"):
+			writeJSON(w, http.StatusOK, "application/json", `{}`)
+		case strings.HasSuffix(r.URL.Path, "/status"):
+			writeJSON(w, http.StatusOK, "application/json", `{}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	c := newClient(t, srv, pin)
+
+	tasks, err := c.PollTasks(ctx(), "dev_1")
+	if err != nil {
+		t.Fatalf("PollTasks: %v", err)
+	}
+	if !tasks.WorkAvailable || tasks.NextPollSeconds != 120 || len(tasks.Tasks) != 1 {
+		t.Errorf("PollTasks parse wrong: %+v", tasks)
+	}
+
+	if _, err := c.AckTask(ctx(), "dev_1", "tsk_1", proto.TaskAckRequest{}); err != nil {
+		t.Errorf("AckTask: %v", err)
+	}
+	if _, err := c.ReportTaskStatus(ctx(), "dev_1", "tsk_1", proto.TaskStatusRequest{}); err != nil {
+		t.Errorf("ReportTaskStatus: %v", err)
+	}
+}

@@ -1,0 +1,18 @@
+# oapi-codegen configuration (S1-T03).
+#
+# Generates the agent-side wire types and typed HTTP client for the Beyz Backup
+# control-plane API from api/openapi.yaml — the committed source of truth
+# (ADR-004 / ARCH-1). The OUTPUT FILE IS GENERATED: never hand-edit it.
+# Regenerate with `task gen` (or `task gen:proto`).
+#
+# Scope (Sprint 1): models + client only. No server code is generated (the SaaS
+# backend is Sprint 2 and will be deployed via Docker Compose / Kubernetes).
+# yaml-language-server: $schema=https://raw.githubusercontent.com/oapi-codegen/oapi-codegen/HEAD/configuration-schema.json
+package: proto
+output: pkg/proto/proto.gen.go
+generate:
+  models: true
+  client: true
+output-options:
+  skip-prune: false
+  skip-fmt: false

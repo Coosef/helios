@@ -1,0 +1,39 @@
+# Beyz Backup agent configuration (config.yaml)
+# Install location (Windows): C:\ProgramData\BeyzBackup\config.yaml
+#
+# Precedence (lowest to highest): built-in defaults < this file < environment
+# variables (prefix BEYZ_, e.g. BEYZ_LOGGING_LEVEL, BEYZ_GENERAL_API_BASE_URL).
+#
+# SECRETS ARE NEVER STORED HERE. The single-use enrollment token is supplied via
+# the BEYZ_ENROLLMENT_TOKEN environment variable (or the installer one-shot
+# file); placing an `enrollment_token` key in this file is REJECTED.
+#
+# The schema (configs/config.schema.json) rejects unknown fields, bad enums, and
+# out-of-range values, and fails closed on load.
+
+config_version: 1
+
+general:
+  # tenant_id and region are populated automatically at enrollment; leave blank
+  # on a fresh install.
+  tenant_id: ""
+  region: ""
+  # REQUIRED — the remote SaaS control-plane base URL. Must be https://.
+  api_base_url: "https://api.beyzbackup.com"
+
+heartbeat:
+  heartbeat_interval_seconds: 60      # 10..3600 (the server may override at runtime)
+  task_poll_interval_seconds: 300     # 10..86400
+
+logging:
+  level: "info"                       # trace | debug | info | warn | error
+  format: "json"                      # json | console
+  file_path: "C:\\ProgramData\\BeyzBackup\\logs\\agent.log"
+
+storage:
+  default_storage_backend: "noop"     # noop | smb | sftp | s3 | minio | beyz (only "noop" is wired in Sprint 1)
+  storage_timeout_seconds: 60         # 1..3600
+
+updater:
+  update_channel: "stable"            # stable | beta | canary
+  update_check_interval_seconds: 3600 # 300..604800

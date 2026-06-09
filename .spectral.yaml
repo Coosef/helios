@@ -1,0 +1,12 @@
+# Spectral ruleset for the Beyz Backup control-plane spec (S1-T02).
+# Extends the built-in OpenAPI ruleset; run via `task spec:lint`.
+extends: ["spectral:oas"]
+
+rules:
+  # Encourage descriptions and examples but do not fail the build on them.
+  operation-tag-defined: error
+  operation-operationId: error
+  operation-description: warn
+  info-contact: error
+  oas3-valid-media-example: error
+  oas3-valid-schema-example: error

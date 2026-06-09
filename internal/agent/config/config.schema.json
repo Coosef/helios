@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://beyzbackup.com/schemas/agent-config-v1.json",
+  "title": "Beyz Backup agent configuration",
+  "description": "config.yaml schema. SECRETS (e.g. the enrollment token) are NOT permitted here; additionalProperties:false rejects them.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["config_version", "general", "heartbeat", "logging", "storage", "updater"],
+  "properties": {
+    "config_version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "On-disk config schema version."
+    },
+    "general": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api_base_url"],
+      "properties": {
+        "tenant_id": { "type": "string", "maxLength": 64 },
+        "region": { "type": "string", "maxLength": 32 },
+        "api_base_url": {
+          "type": "string",
+          "minLength": 8,
+          "pattern": "^https://[^\\s]+$",
+          "description": "Remote SaaS control-plane base URL. Must be https://."
+        }
+      }
+    },
+    "heartbeat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["heartbeat_interval_seconds", "task_poll_interval_seconds"],
+      "properties": {
+        "heartbeat_interval_seconds": { "type": "integer", "minimum": 10, "maximum": 3600 },
+        "task_poll_interval_seconds": { "type": "integer", "minimum": 10, "maximum": 86400 }
+      }
+    },
+    "logging": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level", "format", "file_path"],
+      "properties": {
+        "level": { "type": "string", "enum": ["trace", "debug", "info", "warn", "error"] },
+        "format": { "type": "string", "enum": ["json", "console"] },
+        "file_path": { "type": "string", "minLength": 1 }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["default_storage_backend", "storage_timeout_seconds"],
+      "properties": {
+        "default_storage_backend": {
+          "type": "string",
+          "enum": ["noop", "smb", "sftp", "s3", "minio", "beyz"]
+        },
+        "storage_timeout_seconds": { "type": "integer", "minimum": 1, "maximum": 3600 }
+      }
+    },
+    "updater": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["update_channel", "update_check_interval_seconds"],
+      "properties": {
+        "update_channel": { "type": "string", "enum": ["stable", "beta", "canary"] },
+        "update_check_interval_seconds": { "type": "integer", "minimum": 300, "maximum": 604800 }
+      }
+    }
+  }
+}
