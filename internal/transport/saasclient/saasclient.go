@@ -17,6 +17,10 @@
 //     errors ErrUnauthorized / ErrUpgradeRequired for the CALLER to handle.
 //   - Version headers (X-Agent-Version / X-Protocol-Version) are injected by the
 //     T12 transport via pkg/wireversion; this layer adds no duplicate editor.
+//   - Mutating calls (Enroll/Register/AckTask/ReportTaskStatus) optionally accept a
+//     caller-supplied Idempotency-Key (WithIdempotencyKey) so the SaaS can dedupe a
+//     retried request (T12 retries POSTs). The caller owns key generation and reuse
+//     across retries of the SAME logical operation; this adapter only threads it.
 //   - Control-channel only — never used for large backup-payload transfer.
 //
 // The caller builds request bodies from S1-T11 identity material and persists
@@ -128,12 +132,49 @@ func (c *Client) cacheToken(token string) {
 	c.mu.Unlock()
 }
 
+// ---- per-request options ---------------------------------------------------
+
+// RequestOption customizes a single mutating request. It does not change
+// transport, retry, version-header, or token-rotation behavior.
+type RequestOption func(*requestOptions)
+
+type requestOptions struct {
+	idempotencyKey *proto.IdempotencyKey
+}
+
+// WithIdempotencyKey attaches a caller-generated Idempotency-Key (ADR-004 / §0.2)
+// to a mutating call so the SaaS server can dedupe a retried request (T12 retries
+// POSTs). The caller owns key generation and stability across retries of the SAME
+// logical operation; this adapter only threads the key into the request. It is a
+// no-op for non-mutating calls (Heartbeat / PollTasks carry no such header).
+func WithIdempotencyKey(key proto.IdempotencyKey) RequestOption {
+	return func(o *requestOptions) {
+		k := key
+		o.idempotencyKey = &k
+	}
+}
+
+func applyRequestOptions(opts []RequestOption) requestOptions {
+	var o requestOptions
+	for _, fn := range opts {
+		if fn != nil {
+			fn(&o)
+		}
+	}
+	return o
+}
+
 // ---- typed methods (request/response only) ---------------------------------
 
 // Enroll consumes the enrollment token and returns the device credential. On
 // success the issued session token is cached in memory.
-func (c *Client) Enroll(ctx context.Context, body proto.EnrollRequest) (*proto.EnrollResponse, error) {
-	resp, err := c.api.EnrollAgentWithResponse(ctx, nil, body)
+func (c *Client) Enroll(ctx context.Context, body proto.EnrollRequest, opts ...RequestOption) (*proto.EnrollResponse, error) {
+	o := applyRequestOptions(opts)
+	var params *proto.EnrollAgentParams
+	if o.idempotencyKey != nil {
+		params = &proto.EnrollAgentParams{IdempotencyKey: o.idempotencyKey}
+	}
+	resp, err := c.api.EnrollAgentWithResponse(ctx, params, body)
 	if err != nil {
 		return nil, fmt.Errorf("saasclient: enroll: %w", err)
 	}
@@ -149,8 +190,13 @@ func (c *Client) Enroll(ctx context.Context, body proto.EnrollRequest) (*proto.E
 
 // Register confirms device facts and renews the certificate/session token. The
 // rotated session token is cached in memory.
-func (c *Client) Register(ctx context.Context, deviceID string, body proto.RegisterRequest) (*proto.RegisterResponse, error) {
-	resp, err := c.api.RegisterAgentWithResponse(ctx, deviceID, nil, body)
+func (c *Client) Register(ctx context.Context, deviceID string, body proto.RegisterRequest, opts ...RequestOption) (*proto.RegisterResponse, error) {
+	o := applyRequestOptions(opts)
+	var params *proto.RegisterAgentParams
+	if o.idempotencyKey != nil {
+		params = &proto.RegisterAgentParams{IdempotencyKey: o.idempotencyKey}
+	}
+	resp, err := c.api.RegisterAgentWithResponse(ctx, deviceID, params, body)
 	if err != nil {
 		return nil, fmt.Errorf("saasclient: register: %w", err)
 	}
@@ -199,8 +245,13 @@ func (c *Client) PollTasks(ctx context.Context, deviceID string) (*proto.TasksRe
 }
 
 // AckTask acknowledges receipt of a task.
-func (c *Client) AckTask(ctx context.Context, deviceID, taskID string, body proto.TaskAckRequest) (*proto.TaskAckResponse, error) {
-	resp, err := c.api.AckTaskWithResponse(ctx, deviceID, taskID, nil, body)
+func (c *Client) AckTask(ctx context.Context, deviceID, taskID string, body proto.TaskAckRequest, opts ...RequestOption) (*proto.TaskAckResponse, error) {
+	o := applyRequestOptions(opts)
+	var params *proto.AckTaskParams
+	if o.idempotencyKey != nil {
+		params = &proto.AckTaskParams{IdempotencyKey: o.idempotencyKey}
+	}
+	resp, err := c.api.AckTaskWithResponse(ctx, deviceID, taskID, params, body)
 	if err != nil {
 		return nil, fmt.Errorf("saasclient: ack task: %w", err)
 	}
@@ -214,8 +265,13 @@ func (c *Client) AckTask(ctx context.Context, deviceID, taskID string, body prot
 }
 
 // ReportTaskStatus reports task progress / terminal status.
-func (c *Client) ReportTaskStatus(ctx context.Context, deviceID, taskID string, body proto.TaskStatusRequest) (*proto.TaskStatusResponse, error) {
-	resp, err := c.api.ReportTaskStatusWithResponse(ctx, deviceID, taskID, nil, body)
+func (c *Client) ReportTaskStatus(ctx context.Context, deviceID, taskID string, body proto.TaskStatusRequest, opts ...RequestOption) (*proto.TaskStatusResponse, error) {
+	o := applyRequestOptions(opts)
+	var params *proto.ReportTaskStatusParams
+	if o.idempotencyKey != nil {
+		params = &proto.ReportTaskStatusParams{IdempotencyKey: o.idempotencyKey}
+	}
+	resp, err := c.api.ReportTaskStatusWithResponse(ctx, deviceID, taskID, params, body)
 	if err != nil {
 		return nil, fmt.Errorf("saasclient: report task status: %w", err)
 	}
