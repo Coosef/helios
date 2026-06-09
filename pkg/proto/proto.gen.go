@@ -110,7 +110,11 @@ type DeviceId = string
 // `tenant_id`/`parent_org_id` are advisory: the authoritative tenant is
 // derived server-side from the `enrollment_token`; conflicting values are
 // ignored. `region` is the requested data-residency region; the server
-// confirms the effective region in the response (REV-5).
+// confirms the effective region in the response (REV-5). `location_id` is an
+// ADVISORY requested site/location (e.g. operator-chosen at silent install):
+// the server validates it against the tenant's authorized sites and MAY
+// override or ignore it; the authoritative value is returned in the response
+// (ADR-006).
 type EnrollRequest struct {
 	// AgentVersion Agent semantic version (ADR-004).
 	AgentVersion *AgentVersion `json:"agent_version,omitempty"`
@@ -130,6 +134,18 @@ type EnrollRequest struct {
 	// are transmitted ONLY as deterministic SHA-256 hashes (`sha256:<hex>`),
 	// never raw. Advisory only — never the license key or primary identity.
 	Fingerprint *HardwareSignals `json:"fingerprint,omitempty"`
+
+	// LocationId Optional location/site scope WITHIN a tenant (ADR-006). A mutable,
+	// server-AUTHORITATIVE intra-tenant attribute used only as an authorization
+	// scope filter (dashboards/reports/devices/jobs/restores). It is an
+	// identifier ONLY — no location name is carried on the wire or in agent state.
+	// It is NEVER bound into the agent certificate (only tenant_id/parent_org_id/
+	// region are; ADR-003), so a device may be reassigned between sites of the
+	// same tenant without re-enrolling. A site that must be a HARD isolation
+	// boundary is provisioned as a separate tenant, not a location (ADR-006).
+	// Null when unset. Reserved in Sprint 1; server assignment + scope
+	// enforcement land in Sprint 2.
+	LocationId *LocationId `json:"location_id"`
 
 	// ParentOrgId MSP parent-organization identifier; null for direct tenants (ADR-003, LIC-6).
 	ParentOrgId *ParentOrgId `json:"parent_org_id"`
@@ -193,9 +209,21 @@ type EnrollResponse struct {
 	// LicenseBlob Server-signed, offline-verifiable license blob (LIC-1/4). Reserved/null in
 	// Sprint 1; verified by the agent against an embedded public key in a later
 	// sprint.
-	LicenseBlob          *LicenseBlob `json:"license_blob"`
-	NextHeartbeatSeconds int          `json:"next_heartbeat_seconds"`
-	NextTaskPollSeconds  int          `json:"next_task_poll_seconds"`
+	LicenseBlob *LicenseBlob `json:"license_blob"`
+
+	// LocationId Optional location/site scope WITHIN a tenant (ADR-006). A mutable,
+	// server-AUTHORITATIVE intra-tenant attribute used only as an authorization
+	// scope filter (dashboards/reports/devices/jobs/restores). It is an
+	// identifier ONLY — no location name is carried on the wire or in agent state.
+	// It is NEVER bound into the agent certificate (only tenant_id/parent_org_id/
+	// region are; ADR-003), so a device may be reassigned between sites of the
+	// same tenant without re-enrolling. A site that must be a HARD isolation
+	// boundary is provisioned as a separate tenant, not a location (ADR-006).
+	// Null when unset. Reserved in Sprint 1; server assignment + scope
+	// enforcement land in Sprint 2.
+	LocationId           *LocationId `json:"location_id"`
+	NextHeartbeatSeconds int         `json:"next_heartbeat_seconds"`
+	NextTaskPollSeconds  int         `json:"next_task_poll_seconds"`
 
 	// ParentOrgId MSP parent-organization identifier; null for direct tenants (ADR-003, LIC-6).
 	ParentOrgId   *ParentOrgId `json:"parent_org_id"`
@@ -339,6 +367,18 @@ type LicenseBlob struct {
 // LicenseBlobEncoding defines model for LicenseBlob.Encoding.
 type LicenseBlobEncoding string
 
+// LocationId Optional location/site scope WITHIN a tenant (ADR-006). A mutable,
+// server-AUTHORITATIVE intra-tenant attribute used only as an authorization
+// scope filter (dashboards/reports/devices/jobs/restores). It is an
+// identifier ONLY — no location name is carried on the wire or in agent state.
+// It is NEVER bound into the agent certificate (only tenant_id/parent_org_id/
+// region are; ADR-003), so a device may be reassigned between sites of the
+// same tenant without re-enrolling. A site that must be a HARD isolation
+// boundary is provisioned as a separate tenant, not a location (ADR-006).
+// Null when unset. Reserved in Sprint 1; server assignment + scope
+// enforcement land in Sprint 2.
+type LocationId = string
+
 // ParentOrgId MSP parent-organization identifier; null for direct tenants (ADR-003, LIC-6).
 type ParentOrgId = string
 
@@ -422,7 +462,19 @@ type RegisterResponse struct {
 	// LicenseBlob Server-signed, offline-verifiable license blob (LIC-1/4). Reserved/null in
 	// Sprint 1; verified by the agent against an embedded public key in a later
 	// sprint.
-	LicenseBlob           *LicenseBlob           `json:"license_blob"`
+	LicenseBlob *LicenseBlob `json:"license_blob"`
+
+	// LocationId Optional location/site scope WITHIN a tenant (ADR-006). A mutable,
+	// server-AUTHORITATIVE intra-tenant attribute used only as an authorization
+	// scope filter (dashboards/reports/devices/jobs/restores). It is an
+	// identifier ONLY — no location name is carried on the wire or in agent state.
+	// It is NEVER bound into the agent certificate (only tenant_id/parent_org_id/
+	// region are; ADR-003), so a device may be reassigned between sites of the
+	// same tenant without re-enrolling. A site that must be a HARD isolation
+	// boundary is provisioned as a separate tenant, not a location (ADR-006).
+	// Null when unset. Reserved in Sprint 1; server assignment + scope
+	// enforcement land in Sprint 2.
+	LocationId            *LocationId            `json:"location_id"`
 	ServerTime            time.Time              `json:"server_time"`
 	SessionTokenExpiresAt time.Time              `json:"session_token_expires_at"`
 	AdditionalProperties  map[string]interface{} `json:"-"`
@@ -739,6 +791,14 @@ func (a *EnrollRequest) UnmarshalJSON(b []byte) error {
 		delete(object, "fingerprint")
 	}
 
+	if raw, found := object["location_id"]; found {
+		err = json.Unmarshal(raw, &a.LocationId)
+		if err != nil {
+			return fmt.Errorf("error reading 'location_id': %w", err)
+		}
+		delete(object, "location_id")
+	}
+
 	if raw, found := object["parent_org_id"]; found {
 		err = json.Unmarshal(raw, &a.ParentOrgId)
 		if err != nil {
@@ -848,6 +908,13 @@ func (a EnrollRequest) MarshalJSON() ([]byte, error) {
 		object["fingerprint"], err = json.Marshal(a.Fingerprint)
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling 'fingerprint': %w", err)
+		}
+	}
+
+	if a.LocationId != nil {
+		object["location_id"], err = json.Marshal(a.LocationId)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'location_id': %w", err)
 		}
 	}
 
@@ -1003,6 +1070,14 @@ func (a *EnrollResponse) UnmarshalJSON(b []byte) error {
 		delete(object, "license_blob")
 	}
 
+	if raw, found := object["location_id"]; found {
+		err = json.Unmarshal(raw, &a.LocationId)
+		if err != nil {
+			return fmt.Errorf("error reading 'location_id': %w", err)
+		}
+		delete(object, "location_id")
+	}
+
 	if raw, found := object["next_heartbeat_seconds"]; found {
 		err = json.Unmarshal(raw, &a.NextHeartbeatSeconds)
 		if err != nil {
@@ -1147,6 +1222,13 @@ func (a EnrollResponse) MarshalJSON() ([]byte, error) {
 		object["license_blob"], err = json.Marshal(a.LicenseBlob)
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling 'license_blob': %w", err)
+		}
+	}
+
+	if a.LocationId != nil {
+		object["location_id"], err = json.Marshal(a.LocationId)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'location_id': %w", err)
 		}
 	}
 
@@ -2423,6 +2505,14 @@ func (a *RegisterResponse) UnmarshalJSON(b []byte) error {
 		delete(object, "license_blob")
 	}
 
+	if raw, found := object["location_id"]; found {
+		err = json.Unmarshal(raw, &a.LocationId)
+		if err != nil {
+			return fmt.Errorf("error reading 'location_id': %w", err)
+		}
+		delete(object, "location_id")
+	}
+
 	if raw, found := object["server_time"]; found {
 		err = json.Unmarshal(raw, &a.ServerTime)
 		if err != nil {
@@ -2482,6 +2572,13 @@ func (a RegisterResponse) MarshalJSON() ([]byte, error) {
 		object["license_blob"], err = json.Marshal(a.LicenseBlob)
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling 'license_blob': %w", err)
+		}
+	}
+
+	if a.LocationId != nil {
+		object["location_id"], err = json.Marshal(a.LocationId)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'location_id': %w", err)
 		}
 	}
 

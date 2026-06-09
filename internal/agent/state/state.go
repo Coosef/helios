@@ -66,6 +66,11 @@ const (
 	KeyTenantID    = "tenant_id"
 	KeyParentOrgID = "parent_org_id"
 	KeyRegion      = "region"
+	// KeyLocationID is the optional, server-authoritative intra-tenant location/site
+	// scope (ADR-006). Identifier only — the location NAME is never persisted in the
+	// agent. Non-secret, nullable/absent until the server assigns one; NEVER part of
+	// the certificate binding (only tenant_id/parent_org_id/region are; ADR-003).
+	KeyLocationID  = "location_id"
 	KeyCertificate = "certificate" // public X.509 cert: non-secret
 )
 
@@ -93,7 +98,7 @@ var (
 		SecretPrivateKey: {}, SecretSessionToken: {}, SecretLicenseBlob: {}, SecretWrappedDeviceKey: {},
 	}
 	nonSecretKeySet = map[string]struct{}{
-		KeyDeviceID: {}, KeyTenantID: {}, KeyParentOrgID: {}, KeyRegion: {}, KeyCertificate: {},
+		KeyDeviceID: {}, KeyTenantID: {}, KeyParentOrgID: {}, KeyRegion: {}, KeyLocationID: {}, KeyCertificate: {},
 	}
 )
 

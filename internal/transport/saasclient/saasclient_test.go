@@ -2,6 +2,7 @@ package saasclient_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -329,6 +330,74 @@ func TestHeartbeatSendsNoIdempotencyKey(t *testing.T) {
 	}
 	if _, ok := got["Idempotency-Key"]; ok {
 		t.Errorf("Heartbeat must not send Idempotency-Key, got %q", got.Get("Idempotency-Key"))
+	}
+}
+
+// ADR-006: location_id is an advisory request hint (operator-chosen) and a
+// server-authoritative response value; the agent never persists a location name.
+func TestEnrollLocationIDRoundTrip(t *testing.T) {
+	var reqLocation string
+	var reqHadLocation bool
+	srv, pin := tlsServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]json.RawMessage
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if raw, ok := body["location_id"]; ok {
+			reqHadLocation = true
+			_ = json.Unmarshal(raw, &reqLocation)
+		}
+		// The server may return a DIFFERENT, authoritative location than the hint.
+		writeJSON(w, http.StatusCreated, "application/json",
+			`{"device_id":"dev_1","tenant_id":"tnt_1","region":"eu","location_id":"loc_site_a","agent_session_token":"x"}`)
+	}))
+	c := newClient(t, srv, pin)
+
+	hint := proto.LocationId("loc_operator_hint")
+	resp, err := c.Enroll(ctx(), proto.EnrollRequest{LocationId: &hint})
+	if err != nil {
+		t.Fatalf("Enroll: %v", err)
+	}
+	if !reqHadLocation || reqLocation != "loc_operator_hint" {
+		t.Errorf("request location_id = %q (had=%v), want loc_operator_hint", reqLocation, reqHadLocation)
+	}
+	if resp.LocationId == nil || *resp.LocationId != "loc_site_a" {
+		t.Errorf("response LocationId = %v, want loc_site_a", resp.LocationId)
+	}
+}
+
+func TestEnrollLocationIDOmittedWhenUnset(t *testing.T) {
+	var hadLocation bool
+	srv, pin := tlsServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]json.RawMessage
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_, hadLocation = body["location_id"]
+		writeJSON(w, http.StatusCreated, "application/json",
+			`{"device_id":"dev_1","tenant_id":"tnt_1","region":"eu","agent_session_token":"x"}`)
+	}))
+	c := newClient(t, srv, pin)
+	resp, err := c.Enroll(ctx(), proto.EnrollRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hadLocation {
+		t.Error("location_id must be omitted from the request when unset")
+	}
+	if resp.LocationId != nil {
+		t.Errorf("response LocationId should be nil when the server omits it, got %v", resp.LocationId)
+	}
+}
+
+func TestRegisterLocationIDParsed(t *testing.T) {
+	srv, pin := tlsServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, "application/json",
+			`{"device_id":"dev_1","location_id":"loc_site_b","agent_certificate_pem":"x","agent_session_token":"x"}`)
+	}))
+	c := newClient(t, srv, pin)
+	resp, err := c.Register(ctx(), "dev_1", proto.RegisterRequest{})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if resp.LocationId == nil || *resp.LocationId != "loc_site_b" {
+		t.Errorf("LocationId = %v, want loc_site_b", resp.LocationId)
 	}
 }
 
