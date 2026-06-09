@@ -460,6 +460,29 @@ func TestAuditAppenderRejectsDuplicateSeq(t *testing.T) {
 	}
 }
 
+func TestLocationIDKey(t *testing.T) {
+	s, _, _ := openStore(t)
+
+	// ADR-006: location_id is a NON-secret identifier (no name persisted).
+	if err := s.Put(state.KeyLocationID, []byte("loc_01HXYZSITE001")); err != nil {
+		t.Fatalf("Put(location_id): %v", err)
+	}
+	got, err := s.Get(state.KeyLocationID)
+	if err != nil {
+		t.Fatalf("Get(location_id): %v", err)
+	}
+	if string(got) != "loc_01HXYZSITE001" {
+		t.Errorf("location_id = %q", got)
+	}
+	// Being a non-secret key, the secret API must reject it (key-classification guard).
+	if err := s.PutSecret(state.KeyLocationID, []byte("x")); !errors.Is(err, state.ErrInvalidState) {
+		t.Error("PutSecret(location_id) must be rejected (non-secret key)")
+	}
+	if _, err := s.GetSecret(state.KeyLocationID); !errors.Is(err, state.ErrInvalidState) {
+		t.Error("GetSecret(location_id) must be rejected (non-secret key)")
+	}
+}
+
 func TestKeyClassificationGuards(t *testing.T) {
 	s, _, _ := openStore(t)
 

@@ -772,6 +772,25 @@ components:
         - eu-central-1
         - us-east-1
 
+    LocationId:
+      type: [string, 'null']
+      description: |
+        Optional location/site scope WITHIN a tenant (ADR-006). A mutable,
+        server-AUTHORITATIVE intra-tenant attribute used only as an authorization
+        scope filter (dashboards/reports/devices/jobs/restores). It is an
+        identifier ONLY — no location name is carried on the wire or in agent state.
+        It is NEVER bound into the agent certificate (only tenant_id/parent_org_id/
+        region are; ADR-003), so a device may be reassigned between sites of the
+        same tenant without re-enrolling. A site that must be a HARD isolation
+        boundary is provisioned as a separate tenant, not a location (ADR-006).
+        Null when unset. Reserved in Sprint 1; server assignment + scope
+        enforcement land in Sprint 2.
+      pattern: '^(loc|site)_[A-Za-z0-9]+$'
+      minLength: 5
+      maxLength: 64
+      examples:
+        - loc_01HXYZSITE001
+
     EnrollmentToken:
       type: string
       format: password
@@ -1022,7 +1041,11 @@ components:
         `tenant_id`/`parent_org_id` are advisory: the authoritative tenant is
         derived server-side from the `enrollment_token`; conflicting values are
         ignored. `region` is the requested data-residency region; the server
-        confirms the effective region in the response (REV-5).
+        confirms the effective region in the response (REV-5). `location_id` is an
+        ADVISORY requested site/location (e.g. operator-chosen at silent install):
+        the server validates it against the tenant's authorized sites and MAY
+        override or ignore it; the authoritative value is returned in the response
+        (ADR-006).
       required: [enrollment_token, device_guid, csr_pem, recovery_policy]
       properties:
         enrollment_token:
@@ -1056,6 +1079,8 @@ components:
           $ref: '#/components/schemas/ParentOrgId'
         region:
           $ref: '#/components/schemas/Region'
+        location_id:
+          $ref: '#/components/schemas/LocationId'
         agent_version:
           $ref: '#/components/schemas/AgentVersion'
         supported_format_versions:
@@ -1087,6 +1112,8 @@ components:
           $ref: '#/components/schemas/ParentOrgId'
         region:
           $ref: '#/components/schemas/Region'
+        location_id:
+          $ref: '#/components/schemas/LocationId'
         recovery_policy:
           $ref: '#/components/schemas/RecoveryPolicy'
         agent_certificate_pem:
@@ -1166,6 +1193,8 @@ components:
       properties:
         device_id:
           $ref: '#/components/schemas/DeviceId'
+        location_id:
+          $ref: '#/components/schemas/LocationId'
         agent_certificate_pem:
           type: string
         cert_not_after:
