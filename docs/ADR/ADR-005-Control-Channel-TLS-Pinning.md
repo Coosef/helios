@@ -10,7 +10,7 @@
 S1-T12 (the hardened control-channel HTTP client) passed a senior architecture review and was **approved with conditions**. The client makes **SPKI public-key pinning the trust anchor** for the agent→SaaS control channel (SEC-4): with `InsecureSkipVerify=true` it verifies the server **leaf** certificate's `sha256(SubjectPublicKeyInfo)` against a configured **pin set**, plus the certificate validity window and host identity. This is correct and MITM-resistant, but it **couples the entire fleet to how the SaaS terminates TLS on the control-channel endpoint**:
 
 - Pinning targets the **leaf public key**. If the control-channel endpoint sits behind a **managed/CDN TLS terminator** (Cloudflare, AWS ALB managed certs, etc.) that **auto-rotates the leaf key**, the pin eventually stops matching and **every agent loses connectivity at once (fleet lockout)** — a routine, provider-driven cert change becomes a fleet-down event on a *data-protection* product.
-- A server can **renew its certificate with the same key** without breaking pins (the pin is the *key*, not the cert); only **key rotation** breaks pins. Pinning therefore requires an operational commitment to a **stable, Beyz-controlled key** (or a small managed key-set).
+- A server can **renew its certificate with the same key** without breaking pins (the pin is the *key*, not the cert); only **key rotation** breaks pins. Pinning therefore requires an operational commitment to a **stable, Beyz System-controlled key** (or a small managed key-set).
 - The pin set is captured at client construction; **runtime pin reload is not implemented** in Sprint 1, so a delivered rotation pin takes effect only on agent restart.
 - Pinning intentionally defeats **TLS-intercepting (SSL-inspection) corporate proxies**, and the stdlib transport cannot perform **NTLM/Kerberos** proxy authentication — real enterprise-network constraints.
 
@@ -20,12 +20,12 @@ These are not T12 code defects; they are **system-level decisions T12 forces**, 
 
 1. **T12 is approved with conditions** (recorded here). The transport is production-grade; the conditions are server / operational / integration obligations.
 
-2. **Stable control-channel TLS key.** The Beyz Backup SaaS control channel MUST present a **stable, Beyz-controlled TLS leaf key**, or a **small managed key-set explicitly designed for SPKI pinning** (every key in the set published as a pin).
+2. **Stable control-channel TLS key.** The Helios SaaS control channel MUST present a **stable, Beyz System-controlled TLS leaf key**, or a **small managed key-set explicitly designed for SPKI pinning** (every key in the set published as a pin).
 
 3. **No auto-rotating CDN / managed TLS leaf keys** for the pinned control-channel endpoint.
 
 4. **CDN / managed-TLS in front of the public app is allowed**, but the agent control-channel endpoint MUST either:
-   - terminate TLS on a **stable Beyz-controlled leaf key**, or
+   - terminate TLS on a **stable Beyz System-controlled leaf key**, or
    - be a **dedicated agent API endpoint** with stable SPKI-pinning semantics, separate from the browser-facing app behind the CDN.
 
 5. **Runtime pin reload is NOT required in Sprint 1.** Accepted current behavior: **pin rollover requires an agent restart** (the pin set is read at startup from the compiled-in bootstrap pin ∪ the ACL-locked state store, §0.5). A **dynamic pin provider / runtime reload is deferred to Sprint 8.**
@@ -53,7 +53,7 @@ These are not T12 code defects; they are **system-level decisions T12 forces**, 
 
 | Alternative | Why rejected |
 |---|---|
-| Pin an **intermediate / root CA** instead of the leaf key | More rotation-tolerant, but with `InsecureSkipVerify=true` the chain is not validated, so intermediate pinning is unreliable; it also weakens the anchor (any cert under that CA becomes trusted). Leaf-key pinning + a stable Beyz key is the stronger, simpler model. |
+| Pin an **intermediate / root CA** instead of the leaf key | More rotation-tolerant, but with `InsecureSkipVerify=true` the chain is not validated, so intermediate pinning is unreliable; it also weakens the anchor (any cert under that CA becomes trusted). Leaf-key pinning + a stable Beyz System key is the stronger, simpler model. |
 | **Drop pinning**, rely on system-CA trust + bearer token | Rejected by SEC-4: a single mis-issued / compromised CA cert MITMs the entire fleet on a data-protection product. |
 | Implement **runtime pin reload now** (Sprint 1) | Real, but not Sprint-1-critical; rollover-by-restart is acceptable for the foundation. Deferring to Sprint 8 avoids a dynamic-provider refactor under time pressure. |
 | Allow **auto-rotating CDN/managed leaf keys** + periodic re-pin via update | Turns every provider cert rotation into a forced fleet-update window; fragile and operationally unacceptable for a backup product that must stay reachable. |
@@ -62,7 +62,7 @@ These are not T12 code defects; they are **system-level decisions T12 forces**, 
 
 - **Positive:** the fleet has a clear, enforceable trust model; Sprint 2 server work inherits an explicit TLS-key constraint; T13/T17 have a written integration contract; enterprise-deployment limits are known up front; the 429-vs-5xx requirement caps fleet retry amplification.
 - **Negative / accepted:** pinning blocks TLS-inspection environments (FQDN allow-list required) and NTLM-proxy environments (unsupported in Sprint 1); pin rollover needs an agent restart until Sprint 8.
-- **Release blockers (production fleet):** Decisions **#2 / #3 / #4** (server TLS-key stability) and **#6** (tested rollover runbook) are **release blockers**. For a single controlled pilot where Beyz operates the SaaS, they reduce to operational pre-conditions rather than hard blockers.
+- **Release blockers (production fleet):** Decisions **#2 / #3 / #4** (server TLS-key stability) and **#6** (tested rollover runbook) are **release blockers**. For a single controlled pilot where Beyz System operates the SaaS, they reduce to operational pre-conditions rather than hard blockers.
 
 ## Addendum — S1-T13 Senior Review (2026-06-09)
 

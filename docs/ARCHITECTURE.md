@@ -59,7 +59,7 @@ Supported Targets:
 * SFTP
 * S3
 * MinIO
-* Beyz Cloud Storage
+* Helios Cloud Storage
 
 ---
 

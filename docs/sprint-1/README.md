@@ -1,4 +1,4 @@
-# Beyz Backup — Sprint 1 Architecture Package
+# Helios — Sprint 1 Architecture Package
 
 **Author:** Lead Software Architect (pre-implementation review)
 **Date:** 2026-06-08

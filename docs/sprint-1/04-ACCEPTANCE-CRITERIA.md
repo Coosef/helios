@@ -1,4 +1,4 @@
-# Beyz Backup — Sprint 1 Acceptance Criteria
+# Helios — Sprint 1 Acceptance Criteria
 
 > Measurable, objectively-verifiable exit conditions. **Must-have** = Sprint-1 exit blocker. **Stretch** = desirable, not blocking. Each has an explicit verification method.
 

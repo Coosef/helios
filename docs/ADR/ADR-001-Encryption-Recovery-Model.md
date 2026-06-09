@@ -8,7 +8,7 @@
 
 ## Context
 
-Beyz Backup markets itself on **client-side encryption** so that "the server never accesses plaintext files" (SECURITY.md, CLAUDE.md). Taken literally, that implies a **zero-knowledge** design where the customer alone holds the key. But the target market — SMBs, hotels, MSPs, multi-location companies — is dominated by non-technical operators who **will lose passphrases**. In a pure zero-knowledge product, a lost key means **permanently unrestorable backups**: catastrophic for a *backup* product whose top guiding rule is "restore reliability has higher priority than backup speed" (CLAUDE.md).
+Helios markets itself on **client-side encryption** so that "the server never accesses plaintext files" (SECURITY.md, CLAUDE.md). Taken literally, that implies a **zero-knowledge** design where the customer alone holds the key. But the target market — SMBs, hotels, MSPs, multi-location companies — is dominated by non-technical operators who **will lose passphrases**. In a pure zero-knowledge product, a lost key means **permanently unrestorable backups**: catastrophic for a *backup* product whose top guiding rule is "restore reliability has higher priority than backup speed" (CLAUDE.md).
 
 This is the single highest-leverage irreversible decision in Sprint 1. Although the encryption engine ships in Sprint 4, the **enrollment exchange and on-disk/config format are frozen in Sprint 1**. If enrollment does not branch on the recovery model now, adding it later forces an enrollment-protocol break across a deployed, auto-updating fleet — and recovery can **never** be retrofitted onto data that was already encrypted under an unrecoverable key.
 
@@ -25,7 +25,7 @@ The business has ratified the direction: **Escrowed Recovery is the default; Zer
    - The DEK is wrapped by a tenant **Key-Encryption-Key (KEK)**. Only the **wrapped DEK** (`wrapped_device_key`) is ever stored locally or transmitted.
    - The **server never receives a plaintext DEK or plaintext file data** under either policy. "Zero-knowledge" is defined precisely as: *the server cannot derive the KEK.*
 
-3. **Escrowed Recovery (default):** the KEK is escrowed by the Beyz SaaS, held **encrypted at rest** under a per-tenant envelope key in a managed KMS/HSM. The server can re-wrap the DEK for an authenticated recovery, so a customer who loses local material can still restore. The server still never sees plaintext **file** data — only the wrapped DEK and an escrow-protected KEK.
+3. **Escrowed Recovery (default):** the KEK is escrowed by the Helios SaaS, held **encrypted at rest** under a per-tenant envelope key in a managed KMS/HSM. The server can re-wrap the DEK for an authenticated recovery, so a customer who loses local material can still restore. The server still never sees plaintext **file** data — only the wrapped DEK and an escrow-protected KEK.
 
 4. **Zero-Knowledge Mode (opt-in):** the KEK is derived **on the device** from a **customer recovery secret** via **Argon2id**, captured at enrollment. The server stores **no** recoverable KEK material. Enrollment in this mode **requires** an explicit recovery-material capture-and-confirm step (`recovery_material_ack = true`); without it, enrollment in `zero_knowledge` mode is refused. If the customer loses the recovery secret, backups are unrecoverable **by design**, and this is surfaced to the operator at enrollment.
 

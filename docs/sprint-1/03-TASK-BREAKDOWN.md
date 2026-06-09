@@ -1,4 +1,4 @@
-# Beyz Backup — Sprint 1 Task Breakdown
+# Helios — Sprint 1 Task Breakdown
 
 > Small, sequenced implementation tasks for the Agent Foundation. Complexity: XS (<½d) · S (½–1d) · M (1–2d) · L (2–4d) · XL (split before starting). Priority: P0 = foundation/blocking · P1 = core sprint goal · P2 = hardening/stretch.
 
