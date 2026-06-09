@@ -1,6 +1,8 @@
-# Beyz Backup
+# Helios
 
-A SaaS-based **hybrid backup platform** with Windows/Linux agents — a lightweight alternative to Veeam/Acronis for SMBs, hotels, MSPs, and multi-location companies. The product provides a cloud management panel, customer-owned **and** Beyz Cloud storage, client-side encryption, device + storage-quota licensing, and signed agent auto-update.
+**Helios Data Protection Platform** — a product of **Beyz System A.Ş.**
+
+A SaaS-based **hybrid data protection platform** with Windows/Linux agents — a lightweight alternative to Veeam/Acronis for SMBs, hotels, MSPs, and multi-location companies. The product provides a cloud management panel, customer-owned **and** Helios Cloud storage, client-side encryption, device + storage-quota licensing, and signed agent auto-update.
 
 > **Status: Sprint 1 (Agent Foundation) — in progress.**
 > This repository currently contains the agent/updater **foundation** only: project scaffold, build tooling, and the binaries' entrypoints. No backup, restore, compression, or encryption engine exists yet (those are Sprints 3–6). See [`docs/sprint-1/IMPLEMENTATION-PLAN.md`](docs/sprint-1/IMPLEMENTATION-PLAN.md) for the live task status.

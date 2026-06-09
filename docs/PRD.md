@@ -1,6 +1,6 @@
 You are a senior software architect and full-stack developer.
 
-I want to build a SaaS-based hybrid backup platform named “Beyz Backup”.
+I want to build a SaaS-based hybrid data protection platform named “Helios”, the **Helios Data Protection Platform**, a product of **Beyz System A.Ş.**
 
 The product will work like a lightweight alternative to Veeam/Acronis for SMBs, hotels, MSPs and multi-location companies.
 
@@ -9,7 +9,7 @@ The system will have:
 1. A cloud SaaS management panel
 2. A Windows/Linux backup agent
 3. Customer-owned storage support
-4. Beyz Cloud storage support
+4. Helios Cloud storage support
 5. Device-based licensing
 6. Storage quota-based licensing
 7. Secure client-side encryption

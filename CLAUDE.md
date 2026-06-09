@@ -1,15 +1,15 @@
-# Beyz Backup - Claude Development Rules
+# Helios - Claude Development Rules
 
 ## Project Overview
 
-Beyz Backup is a SaaS-based hybrid backup platform.
+Helios is a SaaS-based hybrid data protection platform.
 
 The product provides:
 
 * SaaS management panel
 * Windows/Linux backup agents
 * Customer-owned storage support
-* Beyz Cloud storage support
+* Helios Cloud storage support
 * Secure backup and restore
 * Device licensing
 * Storage quota licensing

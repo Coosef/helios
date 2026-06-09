@@ -1,4 +1,4 @@
-# Beyz Backup — Sprint 1 Implementation Plan
+# Helios — Sprint 1 Implementation Plan
 
 - **Status:** Active (implementation in progress)
 - **Date:** 2026-06-08
@@ -97,7 +97,7 @@ S1-T12 is **APPROVED WITH CONDITIONS** (senior architecture review, 2026-06-09).
 
 | # | Condition | Owner / when | Blocker? |
 |---|-----------|--------------|----------|
-| C1 | SaaS control channel presents a **stable, Beyz-controlled TLS leaf key** (or small managed pin-set); **no auto-rotating CDN/managed leaf keys**. If a CDN fronts the public app, the agent endpoint terminates on a stable Beyz key or is a **dedicated agent API endpoint**. | Sprint 2 (server) | **Production release blocker** |
+| C1 | SaaS control channel presents a **stable, Beyz System-controlled TLS leaf key** (or small managed pin-set); **no auto-rotating CDN/managed leaf keys**. If a CDN fronts the public app, the agent endpoint terminates on a stable Beyz System key or is a **dedicated agent API endpoint**. | Sprint 2 (server) | **Production release blocker** |
 | C2 | **Pin rollover = agent restart** in Sprint 1 (pin set read at startup). **Dynamic pin reload deferred to Sprint 8.** A **fleet pin-rollover runbook** must be written + tested before production (OQ-26). | Sprint 1 accepted / Sprint 8 + pre-prod | Runbook = **release blocker** |
 | C3 | **Enterprise-network limits documented** (OQ-27): TLS-inspection FQDN must be allow-listed/bypassed; NTLM/Kerberos proxy **unsupported**; Basic/system/explicit proxy supported. | Docs (SECURITY/INSTALL) | No (documentation) |
 | C4 | **T13 integration contract:** `ServerName` from `api_base_url` host · in-memory cached `TokenProvider` (no DPAPI-per-request) · caller handles **401** + **426** · no duplicate version-header editors · **control-channel only, not for bulk payloads**. | S1-T13 | T13 acceptance |

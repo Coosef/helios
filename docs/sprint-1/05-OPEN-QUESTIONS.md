@@ -1,4 +1,4 @@
-# Beyz Backup — Sprint 1 Open Questions
+# Helios — Sprint 1 Open Questions
 
 > Decisions the docs leave open or contradictory that must be settled before coding (or that are expensive to retrofit). Each carries an architect recommendation; **BLOCKING** ones gate the start of Sprint 1.
 
@@ -337,7 +337,7 @@
 
 ### OQ-26 — Fleet Pin-Rollover Runbook & Runtime Pin Reload · **RESOLVED (ADR-005) — deferred work tracked**
 
-**Q:** How does a Beyz-controlled SPKI pin rotation roll across the fleet without lockout, and does the agent need runtime pin reload?
+**Q:** How does a Beyz System-controlled SPKI pin rotation roll across the fleet without lockout, and does the agent need runtime pin reload?
 
 **Why it matters now:** S1-T12 makes SPKI leaf-key pinning the control-channel trust anchor. The pin set is captured at client construction; a delivered rotation pin only takes effect on agent restart. Without a tested rollover process, a routine key rotation risks a fleet lockout (REV-2).
 

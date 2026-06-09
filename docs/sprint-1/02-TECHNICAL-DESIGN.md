@@ -1,4 +1,4 @@
-# Beyz Backup — Sprint 1 Technical Design
+# Helios — Sprint 1 Technical Design
 
 > Sprint 1 = **Agent Foundation** (Windows Service, config, logging, enrollment, heartbeat, task-poll placeholder, updater, Inno Setup installer). No backup/restore/crypto engine. Author: Lead Software Architect. Date: 2026-06-08. Status: for sign-off before coding.
 
@@ -93,21 +93,21 @@ S1-T12 (the hardened control-channel HTTP client) is **APPROVED WITH CONDITIONS*
 
 The transport's code is production-grade; the risks are **system-level decisions T12 forces** — chiefly that SPKI pinning targets the server **leaf public key**, coupling the whole fleet to how the SaaS terminates control-channel TLS.
 
-1. **Stable control-channel TLS key (binding).** The Beyz Backup SaaS control channel **must** present a **stable, Beyz-controlled TLS leaf key** (or a small managed key-set explicitly designed for SPKI pinning). **Do not rely on auto-rotating CDN/managed TLS leaf keys** (Cloudflare/ALB managed certs) for the pinned endpoint — a provider key rotation would cause a **fleet lockout**. If a CDN/managed TLS fronts the public app, the **agent control-channel endpoint** must either terminate on a stable Beyz key or be a **dedicated agent API endpoint** with stable pinning semantics.
+1. **Stable control-channel TLS key (binding).** The Helios SaaS control channel **must** present a **stable, Beyz System-controlled TLS leaf key** (or a small managed key-set explicitly designed for SPKI pinning). **Do not rely on auto-rotating CDN/managed TLS leaf keys** (Cloudflare/ALB managed certs) for the pinned endpoint — a provider key rotation would cause a **fleet lockout**. If a CDN/managed TLS fronts the public app, the **agent control-channel endpoint** must either terminate on a stable Beyz System key or be a **dedicated agent API endpoint** with stable pinning semantics.
 2. **Pin rollover = restart in Sprint 1.** Runtime pin reload is **not** required now; the pin set is read at startup (compiled-in bootstrap ∪ ACL-locked state store, §0.5). **Dynamic pin provider / runtime reload is deferred to Sprint 8.** A **fleet pin-rollover runbook must be written and tested before production release** (OQ-26).
 3. **Enterprise-network limits (documented, OQ-27):** TLS inspection / SSL interception **breaks pinning by design** → the agent control-channel FQDN must be **bypassed** in the inspection proxy; **NTLM/Kerberos authenticated proxy is not supported** in Sprint 1; **Basic proxy** via system env or explicit URL **is** supported.
 4. **T13 integration contract:** `ServerName` from the `api_base_url` host; `TokenProvider` returns an **in-memory cached** token (no DPAPI unwrap per request); **401** and **426** handled by the caller; **no duplicate version-header editors** (T12 injects them); **T12 is control-channel only — never for large backup payloads** (those go through `pkg/storage`).
 5. **T17 heartbeat/poll:** cadence **jitter**, honor **Retry-After**, **low retry count** for heartbeat/poll, **circuit-breaker**, and **recovery thundering-herd mitigation**.
 6. **Sprint 2 backend:** under overload the SaaS API must prefer **`429 + Retry-After`** over generic **5xx** to avoid the per-call retry (≤5×) **amplifying** load across a large fleet.
 
-**Release blockers** for a production fleet: conditions #1 (stable TLS key) and #2's runbook. For a single controlled pilot (Beyz operates the SaaS) these are operational pre-conditions, not hard blockers.
+**Release blockers** for a production fleet: conditions #1 (stable TLS key) and #2's runbook. For a single controlled pilot (Beyz System operates the SaaS) these are operational pre-conditions, not hard blockers.
 
 
 ## §1. Goals, Scope, Deliverables, Components, Folder Structure, Dependencies
 
 > The subsections below are the detailed design. Where they name a library, endpoint count, state-store location, or Go version that conflicts with §0, **§0 wins** (these were independent design tracks).
 
-This section establishes the Sprint 1 foundation for **Beyz Backup**. Sprint 1 ships the **agent foundation only** — no backup/restore/crypto engine — but it makes binding decisions on identity, wire protocol, on-disk format, and trust roots that every later sprint inherits. The risk review (ARCH/SEC/SCALE/BKP/RST/UPD/LIC/STO/GAP) is treated as authoritative: where a "decide-now / impossible-later" item touches a Sprint 1 primitive (enrollment, config schema, wire protocol, manifest envelope, update trust root), this design **reserves the field or fixes the decision now** even though enforcement code lands later.
+This section establishes the Sprint 1 foundation for **Helios**. Sprint 1 ships the **agent foundation only** — no backup/restore/crypto engine — but it makes binding decisions on identity, wire protocol, on-disk format, and trust roots that every later sprint inherits. The risk review (ARCH/SEC/SCALE/BKP/RST/UPD/LIC/STO/GAP) is treated as authoritative: where a "decide-now / impossible-later" item touches a Sprint 1 primitive (enrollment, config schema, wire protocol, manifest envelope, update trust root), this design **reserves the field or fixes the decision now** even though enforcement code lands later.
 
 ---
 
