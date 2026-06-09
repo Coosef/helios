@@ -386,6 +386,35 @@ func TestRunContinuesOnTransientUntilCancel(t *testing.T) {
 	}
 }
 
+// A beat whose response sets work_available=true signals the WorkAvailable channel
+// (non-blocking) — the composition root forwards this to the task-poll loop.
+func TestRunWorkAvailableSignalsChannel(t *testing.T) {
+	resp := okResp(120)
+	resp.WorkAvailable = true
+	wa := make(chan struct{}, 1)
+	c, cancel := context.WithCancel(context.Background())
+	cl := &fakeClient{fn: always(resp, nil)}
+	b := newBeater(t, newFakeState(true), cl, &fakeAudit{}, func(d *heartbeat.Deps) {
+		d.WorkAvailable = wa
+		beats := 0
+		d.Sleep = func(context.Context, time.Duration) error {
+			beats++
+			if beats > 1 {
+				cancel()
+				return context.Canceled
+			}
+			return nil
+		}
+	})
+	_ = b.Run(c)
+	select {
+	case <-wa:
+		// signal received
+	default:
+		t.Error("heartbeat did not signal WorkAvailable on work_available=true")
+	}
+}
+
 // ---- stats ------------------------------------------------------------------
 
 func TestStats(t *testing.T) {

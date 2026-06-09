@@ -101,6 +101,10 @@ type Deps struct {
 	Audit  AuditEmitter
 	// Log is optional (nil disables operational logging). It never receives secrets.
 	Log *logging.Logger
+	// WorkAvailable, when non-nil, receives a NON-BLOCKING signal after any beat
+	// whose response set work_available=true. The composition root (S1-T19) wires
+	// this to the task-poll loop's Poke so a heartbeat can nudge a sooner poll.
+	WorkAvailable chan<- struct{}
 	// Now/Sleep/Rand are injectable for tests; nil uses production defaults.
 	Now   func() time.Time
 	Sleep func(ctx context.Context, d time.Duration) error
@@ -241,6 +245,13 @@ func (b *Beater) Run(ctx context.Context) error {
 			}
 			interval = b.backoffInterval(b.failureCount())
 			continue
+		}
+		if res.WorkAvailable && b.deps.WorkAvailable != nil {
+			// Non-blocking: a pending poke already covers a missed send.
+			select {
+			case b.deps.WorkAvailable <- struct{}{}:
+			default:
+			}
 		}
 		interval = res.NextInterval
 	}
