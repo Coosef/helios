@@ -1,35 +1,179 @@
-// Command beyz-backup-agent is the Beyz Backup Windows/Linux backup agent.
+// Command beyz-backup-agent is the Windows/Linux endpoint agent.
 //
-// Sprint 1 ships the agent FOUNDATION only. This entrypoint is the composition
-// root that later Sprint 1 tasks wire up (configuration, structured logging,
-// OS service lifecycle, enrollment, heartbeat, and task polling). It currently
-// supports `--version` and a no-op run that reports the scaffold state; no
-// backup, restore, compression, or encryption behaviour exists yet (those are
-// Sprints 3-6).
+// It runs the agent composition root (internal/agent/app) under the OS service
+// lifecycle adapter (internal/agent/service): as a Windows Service (SCM), a Linux
+// systemd service, or a foreground console process. The SPKI bootstrap pin is
+// compiled in (internal/agent/trustpins); a build with no pin fails closed.
+// Sprint-1 scope: no backup/restore engine, no installer, no updater service.
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
+	"runtime"
 
+	"github.com/beyzbackup/beyz-backup/internal/agent/app"
+	"github.com/beyzbackup/beyz-backup/internal/agent/service"
+	"github.com/beyzbackup/beyz-backup/internal/agent/trustpins"
 	"github.com/beyzbackup/beyz-backup/internal/buildinfo"
 )
 
-const binaryName = "beyz-backup-agent"
+const (
+	binaryName         = "beyz-backup-agent"
+	serviceName        = "BeyzBackupAgent" // frozen identifier; Phase-3 rename deferred
+	serviceDescription = "Endpoint agent service (backup/restore foundation)."
+)
 
-func main() {
-	var showVersion bool
-	flag.BoolVar(&showVersion, "version", false, "print version information and exit")
-	flag.Parse()
+// Exit codes. Terminal credential/version outcomes get DISTINCT codes so an
+// operator / systemd can distinguish them and NOT spin a restart loop.
+const (
+	exitOK             = 0
+	exitError          = 1  // startup/config/state/transport or generic failure
+	exitReEnroll       = 10 // 401 -> re-enrollment required (do not auto-restart)
+	exitUpgrade        = 11 // 426 -> protocol upgrade required (route to updater)
+	exitAlreadyRunning = 12 // single-instance lock held by another process
+)
 
-	info := buildinfo.Get(binaryName)
-	if showVersion {
-		fmt.Println(info.String())
-		return
+func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
+
+// run parses flags and dispatches. It is the testable entrypoint.
+func run(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet(binaryName, flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	var showVersion, foreground bool
+	var configPath string
+	fs.BoolVar(&showVersion, "version", false, "print version information and exit")
+	fs.BoolVar(&foreground, "foreground", false, "run in the foreground (console) instead of as a service")
+	fs.StringVar(&configPath, "config", "", "path to config.yaml (default: OS-specific)")
+	if err := fs.Parse(args); err != nil {
+		return exitError
 	}
 
-	fmt.Fprintf(os.Stdout,
-		"%s: Sprint 1 scaffold — the agent runtime is not yet implemented. See docs/sprint-1/IMPLEMENTATION-PLAN.md.\n",
-		info.String())
+	if showVersion {
+		fmt.Fprintln(stdout, buildinfo.Get(binaryName).String())
+		return exitOK
+	}
+
+	// Optional dev control verbs: install | uninstall | start | stop | restart.
+	if rest := fs.Args(); len(rest) > 0 {
+		return control(rest[0], configPath, stdout, stderr)
+	}
+	return serve(configPath, foreground, stderr)
 }
+
+// serve builds the app + service and runs it, mapping the terminal outcome to an
+// exit code. Startup failures print only the typed error (never config/secrets).
+func serve(configPath string, foreground bool, stderr io.Writer) int {
+	if configPath == "" {
+		configPath = defaultConfigPath()
+	}
+	a, err := app.New(app.Options{
+		ConfigPath:    configPath,
+		StateDir:      defaultStateDir(),
+		BootstrapPins: trustpins.Bootstrap(),
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "%s: startup failed: %v\n", binaryName, err)
+		return exitCodeFor(err)
+	}
+	svc, serr := service.New(service.Config{
+		Name:        serviceName,
+		DisplayName: serviceName,
+		Description: serviceDescription,
+		Runnable:    a,
+		Log:         a.Logger(),
+		LockPath:    defaultLockPath(),
+		Arguments:   []string{"--config", configPath},
+		ExitFunc:    exitCodeFor, // watchdog last-resort exit uses the mapped code
+	})
+	if serr != nil {
+		_ = a.Close()
+		fmt.Fprintf(stderr, "%s: service init: %v\n", binaryName, serr)
+		return exitError
+	}
+	_ = foreground // kardianos auto-detects console vs service; the flag is an explicit hint
+	return exitCodeFor(svc.Run())
+}
+
+// control runs an OS service-manager action (dev/Linux convenience; the production
+// Windows install is installer-driven, T29). It uses a no-op runnable since the
+// workload is never started for a control action.
+func control(verb, configPath string, stdout, stderr io.Writer) int {
+	switch verb {
+	case "install", "uninstall", "start", "stop", "restart":
+	default:
+		fmt.Fprintf(stderr, "%s: unknown command %q (want: install|uninstall|start|stop|restart)\n", binaryName, verb)
+		return exitError
+	}
+	if configPath == "" {
+		configPath = defaultConfigPath()
+	}
+	svc, err := service.New(service.Config{
+		Name:        serviceName,
+		DisplayName: serviceName,
+		Description: serviceDescription,
+		Runnable:    noopRunnable{},
+		Arguments:   []string{"--config", configPath},
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "%s: %v\n", binaryName, err)
+		return exitError
+	}
+	if err := svc.Control(verb); err != nil {
+		fmt.Fprintf(stderr, "%s: %s failed: %v\n", binaryName, verb, err)
+		return exitError
+	}
+	fmt.Fprintf(stdout, "%s: %s ok\n", binaryName, verb)
+	return exitOK
+}
+
+// exitCodeFor maps a terminal app/service outcome to a process exit code.
+func exitCodeFor(err error) int {
+	switch {
+	case err == nil:
+		return exitOK
+	case errors.Is(err, app.ErrEnrollmentRequired):
+		return exitReEnroll
+	case errors.Is(err, app.ErrUpgradeRequired):
+		return exitUpgrade
+	case errors.Is(err, service.ErrAlreadyRunning):
+		return exitAlreadyRunning
+	default:
+		return exitError
+	}
+}
+
+// noopRunnable supervises nothing; used only for control actions (install/etc.).
+type noopRunnable struct{}
+
+func (noopRunnable) Run(ctx context.Context) error { <-ctx.Done(); return ctx.Err() }
+func (noopRunnable) Close() error                  { return nil }
+
+// ---- per-OS default paths (minimal; generalized in S1-T20) ------------------
+
+func defaultBaseDir() string {
+	if runtime.GOOS == "windows" {
+		pd := os.Getenv("ProgramData")
+		if pd == "" {
+			pd = `C:\ProgramData`
+		}
+		return filepath.Join(pd, "BeyzBackup")
+	}
+	return "/var/lib/beyz-backup"
+}
+
+func defaultConfigPath() string {
+	if runtime.GOOS == "windows" {
+		return filepath.Join(defaultBaseDir(), "config.yaml")
+	}
+	return "/etc/beyz-backup/config.yaml"
+}
+
+func defaultStateDir() string { return filepath.Join(defaultBaseDir(), "state") }
+
+func defaultLockPath() string { return filepath.Join(defaultStateDir(), "agent.lock") }

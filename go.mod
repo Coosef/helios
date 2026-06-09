@@ -8,6 +8,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/google/uuid v1.6.0
 	github.com/gowebpki/jcs v1.0.1
+	github.com/kardianos/service v1.2.4
 	github.com/knadh/koanf/parsers/yaml v1.1.0
 	github.com/knadh/koanf/providers/confmap v1.0.0
 	github.com/knadh/koanf/providers/env v1.1.0
@@ -18,7 +19,7 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/zeebo/blake3 v0.2.4
 	go.etcd.io/bbolt v1.4.3
-	golang.org/x/sys v0.32.0
+	golang.org/x/sys v0.34.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 

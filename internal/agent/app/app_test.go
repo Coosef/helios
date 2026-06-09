@@ -122,8 +122,20 @@ func TestRunNotEnrolledTriggersEnrollment(t *testing.T) {
 	}
 }
 
-func TestRunEnrollFailureSurfaces(t *testing.T) {
+// A rejected/consumed enrollment token (401/409) is terminal: re-running enroll
+// with the same token loops, so it surfaces as ErrEnrollmentRequired (the
+// entrypoint maps that to a distinct non-restart exit code, not a crash-loop).
+func TestRunEnrollTokenRejectedSurfacesReEnroll(t *testing.T) {
 	fb := &fakeBuilder{enrolled: false, enrollErr: enroll.ErrTokenRejected}
+	if err := appWith(fb).Run(context.Background()); !errors.Is(err, ErrEnrollmentRequired) {
+		t.Errorf("err = %v, want ErrEnrollmentRequired", err)
+	}
+}
+
+// A transient enrollment failure (network/5xx) stays ErrEnrollFailed — the
+// service manager may legitimately retry enrollment on restart.
+func TestRunEnrollTransientFailureSurfaces(t *testing.T) {
+	fb := &fakeBuilder{enrolled: false, enrollErr: enroll.ErrEnrollFailed}
 	if err := appWith(fb).Run(context.Background()); !errors.Is(err, ErrEnrollFailed) {
 		t.Errorf("err = %v, want ErrEnrollFailed", err)
 	}

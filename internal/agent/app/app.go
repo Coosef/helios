@@ -203,6 +203,10 @@ func (a *App) Run(ctx context.Context) error {
 // Close releases the state store and logger (LIFO).
 func (a *App) Close() error { return closeAll(a.closers) }
 
+// Logger returns the app's structured logger (redacting at the sink). May be nil
+// before New completes. The service adapter uses it for panic/lifecycle logging.
+func (a *App) Logger() *logging.Logger { return a.log }
+
 func (a *App) logInfo(event string) {
 	if a.log != nil {
 		a.log.Info(event).Msg("")
@@ -245,12 +249,21 @@ func classifyLoop(err error) error {
 	}
 }
 
-// classifyEnroll maps a startup enrollment error to an app-level outcome.
+// classifyEnroll maps a startup enrollment error to an app-level outcome. A
+// rejected/consumed token (401/409) and a protocol upgrade (426) are TERMINAL —
+// re-running enrollment with the same token/binary just loops — so they surface
+// as the distinct re-enroll/upgrade outcomes the entrypoint maps to non-restart
+// exit codes. Any other failure (network/5xx/transient) stays ErrEnrollFailed,
+// which exits generic so the service manager may legitimately retry enrollment.
 func classifyEnroll(err error) error {
-	if errors.Is(err, enroll.ErrUpgradeRequired) {
+	switch {
+	case errors.Is(err, enroll.ErrUpgradeRequired):
 		return fmt.Errorf("%w: %v", ErrUpgradeRequired, err)
+	case errors.Is(err, enroll.ErrTokenRejected):
+		return fmt.Errorf("%w: %v", ErrEnrollmentRequired, err)
+	default:
+		return fmt.Errorf("%w: %v", ErrEnrollFailed, err)
 	}
-	return fmt.Errorf("%w: %v", ErrEnrollFailed, err)
 }
 
 func closeAll(closers []func() error) error {
