@@ -47,6 +47,11 @@ const (
 	defaultKeepAlive             = 30 * time.Second
 	defaultMaxIdleConns          = 100
 	defaultMaxIdleConnsPerHost   = 10
+	// defaultMaxResponseBytes caps a control-plane response body (T13-C3). The
+	// largest current response is the task list (schema-capped at 100 entries,
+	// ~15 KiB); 1 MiB is ~70x headroom and matches wireversion.MaxProblemBodyBytes.
+	// Callers that expect a larger body raise it per-request via WithMaxResponseBytes.
+	defaultMaxResponseBytes = 1 << 20 // 1 MiB
 )
 
 // Config configures a Client.
@@ -77,6 +82,10 @@ type Config struct {
 	MaxRetries  int
 	BaseBackoff time.Duration
 	MaxBackoff  time.Duration
+
+	// MaxResponseBytes caps the response body size (T13-C3); <= 0 uses
+	// defaultMaxResponseBytes (1 MiB). Per-request overrides via WithMaxResponseBytes.
+	MaxResponseBytes int64
 }
 
 // DefaultConfig returns production defaults (without pins). Set Pins (and usually
@@ -91,17 +100,19 @@ func DefaultConfig() Config {
 		MaxRetries:            4,
 		BaseBackoff:           defaultBaseBackoff,
 		MaxBackoff:            defaultMaxBackoff,
+		MaxResponseBytes:      defaultMaxResponseBytes,
 	}
 }
 
 // Client is the hardened HTTP client. It is safe for concurrent use.
 type Client struct {
-	http          *http.Client
-	tokenProvider func() string
-	maxRetries    int
-	baseBackoff   time.Duration
-	maxBackoff    time.Duration
-	sleep         func(context.Context, time.Duration) error
+	http             *http.Client
+	tokenProvider    func() string
+	maxRetries       int
+	baseBackoff      time.Duration
+	maxBackoff       time.Duration
+	maxResponseBytes int64
+	sleep            func(context.Context, time.Duration) error
 }
 
 // Option customizes a Client (mainly for tests).
@@ -133,13 +144,18 @@ func New(cfg Config, opts ...Option) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	maxResp := cfg.MaxResponseBytes
+	if maxResp <= 0 {
+		maxResp = defaultMaxResponseBytes
+	}
 	c := &Client{
-		http:          hc,
-		tokenProvider: cfg.TokenProvider,
-		maxRetries:    cfg.MaxRetries,
-		baseBackoff:   orDefault(cfg.BaseBackoff, defaultBaseBackoff),
-		maxBackoff:    orDefault(cfg.MaxBackoff, defaultMaxBackoff),
-		sleep:         defaultSleeper,
+		http:             hc,
+		tokenProvider:    cfg.TokenProvider,
+		maxRetries:       cfg.MaxRetries,
+		baseBackoff:      orDefault(cfg.BaseBackoff, defaultBaseBackoff),
+		maxBackoff:       orDefault(cfg.MaxBackoff, defaultMaxBackoff),
+		maxResponseBytes: maxResp,
+		sleep:            defaultSleeper,
 	}
 	if c.maxRetries < 0 {
 		c.maxRetries = 0
@@ -231,6 +247,10 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 		}
 
 		if !retryableStatus(resp.StatusCode) || attempt >= c.maxRetries {
+			// Bound the body returned to the caller (T13-C3): all downstream readers
+			// (the generated pkg/proto parsers) inherit the cap with no caller change.
+			// The per-request override (WithMaxResponseBytes) wins over the default.
+			resp.Body = newLimitedBody(resp.Body, effectiveLimit(callerCtx, c.maxResponseBytes))
 			return resp, nil // success, non-retryable (incl. 401/426), or retries exhausted
 		}
 

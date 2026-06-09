@@ -112,7 +112,7 @@ The S1-T13 senior architect review (2026-06-09; ultracode adversarial verificati
 |------|---------|-------|--------|
 | **T13-C1** | Mutating calls (`Enroll`/`Register`/`AckTask`/`ReportTaskStatus`) accept an **optional caller-supplied `Idempotency-Key`** (`WithIdempotencyKey`) so T12-retried POSTs can be deduped (Register cert-renewal is load-bearing). Adapter-only; version ownership stays in T12; no retry orchestration; no server dedupe. **Sprint-2 server must implement the 24h dedupe** this enables. | S1-T13 (+ Sprint 2 server) | ✅ Done 2026-06-09 |
 | **T13-C2** | **T17 caller contract:** scheduler must (a) **serialize token-rotating calls** (in-memory cache is last-writer-wins by design — concurrent rotation is an anti-pattern, not CAS-guarded), (b) **persist a rotated `agent_session_token` before marking a heartbeat complete**, (c) set a **sane `PollTasks` max**. Optional: T13 may later expose a rotation signal/callback. | S1-T17 | ⬜ Pending |
-| **T13-C3** | **Defensive response-size cap** (`io.LimitReader`/`http.MaxBytesReader`) at the **T12/proto** transport boundary so one oversized response can't OOM an agent (not in T13). | S1-T12 boundary | ⬜ Pending |
+| **T13-C3** | **Defensive response-size cap** at the **T12 transport boundary** so one oversized response can't OOM an agent. | S1-T12 boundary | ✅ Done 2026-06-10 |
 
 ## T14 Enrollment Recovery Forward Items
 
