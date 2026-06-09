@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/beyzbackup/beyz-backup/internal/transport/httpclient"
 	"github.com/beyzbackup/beyz-backup/internal/transport/saasclient"
 	"github.com/beyzbackup/beyz-backup/pkg/proto"
@@ -212,6 +214,121 @@ func TestNonJSONErrorBodyFallback(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "upstream exploded") {
 		t.Errorf("error should include the raw body fallback: %v", err)
+	}
+}
+
+// mutatingCall describes one Idempotency-Key-capable endpoint for table tests.
+type mutatingCall struct {
+	name   string
+	status int
+	body   string
+	invoke func(c *saasclient.Client, opts ...saasclient.RequestOption) error
+}
+
+func mutatingCalls() []mutatingCall {
+	return []mutatingCall{
+		{
+			name: "Enroll", status: http.StatusCreated,
+			body: `{"device_id":"d","tenant_id":"t","region":"r","agent_session_token":"x"}`,
+			invoke: func(c *saasclient.Client, opts ...saasclient.RequestOption) error {
+				_, err := c.Enroll(ctx(), proto.EnrollRequest{}, opts...)
+				return err
+			},
+		},
+		{
+			name: "Register", status: http.StatusOK,
+			body: `{"device_id":"d","agent_certificate_pem":"x","agent_session_token":"x"}`,
+			invoke: func(c *saasclient.Client, opts ...saasclient.RequestOption) error {
+				_, err := c.Register(ctx(), "dev_1", proto.RegisterRequest{}, opts...)
+				return err
+			},
+		},
+		{
+			name: "AckTask", status: http.StatusOK, body: `{}`,
+			invoke: func(c *saasclient.Client, opts ...saasclient.RequestOption) error {
+				_, err := c.AckTask(ctx(), "dev_1", "tsk_1", proto.TaskAckRequest{}, opts...)
+				return err
+			},
+		},
+		{
+			name: "ReportTaskStatus", status: http.StatusOK, body: `{}`,
+			invoke: func(c *saasclient.Client, opts ...saasclient.RequestOption) error {
+				_, err := c.ReportTaskStatus(ctx(), "dev_1", "tsk_1", proto.TaskStatusRequest{}, opts...)
+				return err
+			},
+		},
+	}
+}
+
+func TestIdempotencyKeyThreadedWhenSupplied(t *testing.T) {
+	key := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
+	for _, tc := range mutatingCalls() {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			var got http.Header
+			srv, pin := tlsServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				got = r.Header.Clone()
+				writeJSON(w, tc.status, "application/json", tc.body)
+			}))
+			c := newClient(t, srv, pin)
+			if err := tc.invoke(c, saasclient.WithIdempotencyKey(key)); err != nil {
+				t.Fatalf("%s: %v", tc.name, err)
+			}
+			if gk := got.Get("Idempotency-Key"); gk != key.String() {
+				t.Errorf("Idempotency-Key = %q, want %q", gk, key.String())
+			}
+			// Rule 4/5/7: with non-nil params the generated builder writes EMPTY
+			// version headers; T12 must overwrite them with the real values, and
+			// there must be no duplicate header values.
+			if got.Get("X-Agent-Version") == "" || got.Get("X-Protocol-Version") == "" {
+				t.Errorf("version headers not injected by T12 with non-nil params: %v", got)
+			}
+			if v := got.Values("X-Agent-Version"); len(v) != 1 {
+				t.Errorf("X-Agent-Version duplicated: %v", v)
+			}
+			if v := got.Values("X-Protocol-Version"); len(v) != 1 {
+				t.Errorf("X-Protocol-Version duplicated: %v", v)
+			}
+		})
+	}
+}
+
+func TestIdempotencyKeyAbsentByDefault(t *testing.T) {
+	for _, tc := range mutatingCalls() {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			var got http.Header
+			srv, pin := tlsServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				got = r.Header.Clone()
+				writeJSON(w, tc.status, "application/json", tc.body)
+			}))
+			c := newClient(t, srv, pin)
+			if err := tc.invoke(c); err != nil { // no options -> current behavior
+				t.Fatalf("%s: %v", tc.name, err)
+			}
+			if _, ok := got["Idempotency-Key"]; ok {
+				t.Errorf("Idempotency-Key must be absent by default, got %q", got.Get("Idempotency-Key"))
+			}
+			if got.Get("X-Agent-Version") == "" || got.Get("X-Protocol-Version") == "" {
+				t.Errorf("version headers missing on default path: %v", got)
+			}
+		})
+	}
+}
+
+// Heartbeat / PollTasks are out of scope: they carry no Idempotency-Key header.
+func TestHeartbeatSendsNoIdempotencyKey(t *testing.T) {
+	var got http.Header
+	srv, pin := tlsServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Clone()
+		writeJSON(w, http.StatusOK, "application/json", `{}`)
+	}))
+	c := newClient(t, srv, pin)
+	if _, err := c.Heartbeat(ctx(), "dev_1", proto.HeartbeatRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got["Idempotency-Key"]; ok {
+		t.Errorf("Heartbeat must not send Idempotency-Key, got %q", got.Get("Idempotency-Key"))
 	}
 }
 
