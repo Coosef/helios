@@ -183,6 +183,17 @@ func TestUpgradeRequiredPropagates(t *testing.T) {
 	}
 }
 
+func TestConflictPropagates(t *testing.T) {
+	srv, pin := tlsServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusConflict, "application/problem+json",
+			`{"title":"Conflict","code":"TOKEN_CONSUMED","detail":"enrollment token already used"}`)
+	}))
+	c := newClient(t, srv, pin)
+	if _, err := c.Enroll(ctx(), proto.EnrollRequest{}); !errors.Is(err, saasclient.ErrConflict) {
+		t.Errorf("err = %v, want ErrConflict", err)
+	}
+}
+
 func TestUnexpectedStatusPropagates(t *testing.T) {
 	srv, pin := tlsServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, "application/problem+json", `{"title":"boom"}`)
