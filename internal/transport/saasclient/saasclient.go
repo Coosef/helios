@@ -48,6 +48,10 @@ var (
 	// ErrUpgradeRequired is returned on HTTP 426; the caller stops calling and
 	// routes to the updater (ADR-004).
 	ErrUpgradeRequired = errors.New("saasclient: 426 upgrade required")
+	// ErrConflict is returned on HTTP 409 (e.g. an enrollment token already
+	// consumed / a duplicate that the server refuses); the caller decides whether
+	// to treat it as a rejection or a benign already-applied outcome.
+	ErrConflict = errors.New("saasclient: 409 conflict")
 	// ErrUnexpectedStatus is returned for any other non-2xx status.
 	ErrUnexpectedStatus = errors.New("saasclient: unexpected status")
 	// ErrEmptyBody is returned when a 2xx response carries no decodable body.
@@ -294,6 +298,8 @@ func classify(status int, body []byte) error {
 		return fmt.Errorf("%w: %s", ErrUnauthorized, problemDetail(body))
 	case status == 426:
 		return fmt.Errorf("%w: %s", ErrUpgradeRequired, problemDetail(body))
+	case status == 409:
+		return fmt.Errorf("%w: %s", ErrConflict, problemDetail(body))
 	default:
 		return fmt.Errorf("%w (%d): %s", ErrUnexpectedStatus, status, problemDetail(body))
 	}
