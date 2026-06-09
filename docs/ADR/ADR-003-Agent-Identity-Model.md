@@ -68,3 +68,7 @@ The following are **frozen** ahead of `internal/agent/identity` and are reflecte
 6. **Local-first generation** (GUID/key/CSR need no server) is preserved, keeping offline-enrollment compatibility open. The `device_guid` is stable across reinstall (write-once sidecar, T10).
 
 Key rotation on renewal stays **flexible** (Sprint 1 keeps the key stable so the SPKI fingerprint is stable; rotation lands when the server tracks SPKI history).
+
+## Note (S1-T14 — Enrollment crash recovery, 2026-06-09)
+
+Enrollment crash recovery **does not change the identity model.** `device_guid` remains the **continuity anchor**: it (and the private key) are persisted locally *before* the server call, so they survive any crash. If the agent crashes after the server issues a credential but before it persists locally, the single-use token is already consumed (replay → `409`, fatal by design) and recovery is the **re-enrollment flow, which MUST reuse the existing `device_guid` and license seat** (decision 6 above; Technical Design §0.2/597) while the server issues a fresh certificate. Recovery is therefore an orchestration/server concern (tracked as IMPLEMENTATION-PLAN forward items FI-1/FI-2), not an identity-model change.
