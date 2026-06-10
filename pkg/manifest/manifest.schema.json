@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://beyzbackup.com/schemas/update-manifest-v1.json",
+  "title": "Helios update manifest",
+  "description": "Signed update-manifest contract (ADR-002). The Ed25519 signature (T22/T23) covers the RFC 8785 (JCS) canonicalization of this document with the `signature` field removed. Unknown fields are tolerated for forward compatibility: integrity comes from the signature over the full canonical form, not from additionalProperties. Signature VERIFICATION is implemented in S1-T23, not here.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "target_version",
+    "min_supported_version",
+    "artifacts",
+    "key_id",
+    "key_revocation_list",
+    "signature"
+  ],
+  "properties": {
+    "schema_version": {
+      "description": "Manifest format version. A different value signals a breaking format change and is rejected (an old agent must not reinterpret a security artifact).",
+      "type": "integer",
+      "const": 1
+    },
+    "target_version": {
+      "description": "The agent version this manifest delivers (clean MAJOR.MINOR.PATCH release; each segment <= 9 digits to match the platform-independent parser).",
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})$"
+    },
+    "min_supported_version": {
+      "description": "Anti-rollback floor (UPD-6). Must be <= target_version.",
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})$"
+    },
+    "allow_downgrade": {
+      "description": "Emergency-downgrade flag (AC-25). Default false. The trust decision around it is enforced in the updater (T24), not here.",
+      "type": "boolean"
+    },
+    "released_at": {
+      "description": "Optional RFC 3339 release timestamp. The pattern gates the shape (jsonschema treats `format` as annotation-only); the updater's Go layer asserts exact RFC 3339 validity.",
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"
+    },
+    "rollout_cohort_pct": {
+      "description": "Optional staged-rollout cohort percentage (UPD-5).",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "update_allowed": {
+      "description": "Optional kill-switch (UPD-5). When present and false, the updater must not apply the update.",
+      "type": "boolean"
+    },
+    "artifacts": {
+      "description": "Per platform/arch binary artifacts. At least one is required.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["platform", "arch", "url", "size_bytes", "sha256", "blake3"],
+        "properties": {
+          "platform": { "type": "string", "enum": ["windows", "linux"] },
+          "arch": { "type": "string", "enum": ["amd64", "arm64"] },
+          "url": {
+            "description": "HTTPS download URL with a host and no whitespace/control characters. Integrity comes from the signed hashes; HTTPS is defense in depth. The updater (T24/T25) re-validates via url.Parse.",
+            "type": "string",
+            "pattern": "^https://[^\\s\\x00-\\x1f/]+(/[^\\s\\x00-\\x1f]*)?$"
+          },
+          "size_bytes": {
+            "description": "Exact expected byte length of the artifact. Bounded to 2^53-1 so its signed (IEEE-754) canonical form is exact. Used as the download ceiling in T25.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "sha256": {
+            "description": "Lowercase hex SHA-256 of the artifact bytes (the field name is the algorithm tag).",
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "blake3": {
+            "description": "Lowercase hex BLAKE3-256 of the artifact bytes (the field name is the algorithm tag).",
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "key_id": {
+      "description": "Identifier of the embedded signing key that produced `signature` (ADR-002).",
+      "type": "string",
+      "minLength": 1
+    },
+    "key_revocation_list": {
+      "description": "Key-ids revoked by this (signed) manifest. May be empty. Enforced in T23.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "signature": {
+      "description": "Base64 Ed25519 signature over the JCS canonicalization of this manifest WITHOUT this field. Excluded from the signing input. Verified in S1-T23.",
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}
