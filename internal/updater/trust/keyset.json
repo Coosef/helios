@@ -1,0 +1,11 @@
+{
+  "keys": [
+    {
+      "algorithm": "ed25519",
+      "key_id": "helios-update-ed25519-test-1",
+      "public_key": "7c1N3RrOeZubTFeXreoj00boeToi9kp5W9juh20sIS0=",
+      "revoked": false
+    }
+  ],
+  "schema_version": 1
+}
