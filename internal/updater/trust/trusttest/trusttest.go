@@ -8,8 +8,11 @@ package trusttest
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
 
 	"github.com/beyzbackup/beyz-backup/internal/updater/trust"
+	"github.com/beyzbackup/beyz-backup/pkg/manifest"
 )
 
 // DeterministicKeyPair derives a reproducible Ed25519 keypair from a 32-byte seed,
@@ -47,4 +50,28 @@ func KeySet(entries ...trust.KeyEntry) (*trust.KeySet, error) {
 // SingleKeySet builds a one-key trust set from a public key.
 func SingleKeySet(keyID string, pub ed25519.PublicKey) (*trust.KeySet, error) {
 	return trust.NewKeySet([]trust.KeyEntry{{KeyID: keyID, PublicKey: pub}})
+}
+
+// SignManifest signs rawManifest with priv and returns the manifest with its
+// `signature` field set to the base64 Ed25519 signature over the canonical signing
+// input (manifest.CanonicalSigningInput, which excludes the signature field). The
+// caller must set key_id (and any other fields) on rawManifest BEFORE signing, so
+// they are covered by the signature. This mirrors the offline signing ceremony for
+// test fixtures — the private key is a test key generated at runtime.
+func SignManifest(rawManifest []byte, priv ed25519.PrivateKey) ([]byte, error) {
+	ci, err := manifest.CanonicalSigningInput(rawManifest)
+	if err != nil {
+		return nil, err
+	}
+	sig := ed25519.Sign(priv, ci)
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(rawManifest, &obj); err != nil {
+		return nil, err
+	}
+	enc, err := json.Marshal(base64.StdEncoding.EncodeToString(sig))
+	if err != nil {
+		return nil, err
+	}
+	obj["signature"] = enc
+	return json.Marshal(obj)
 }
