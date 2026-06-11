@@ -461,3 +461,48 @@ func TestNoSecretLeakInLogs(t *testing.T) {
 // ---- helpers ----------------------------------------------------------------
 
 func intp(i int) *int { return &i }
+
+// ---- S1-T26 post-update hooks -----------------------------------------------
+
+func TestBeatAttachesUpdateResultAndCallsOnSuccess(t *testing.T) {
+	cl := &fakeClient{fn: always(okResp(120), nil)}
+	st := newFakeState(true)
+	var calls int
+	ok := proto.UpdateResultOk
+	b := newBeater(t, st, cl, &fakeAudit{}, func(d *heartbeat.Deps) {
+		d.UpdateReport = func() *proto.UpdateResult { return &ok }
+		d.OnBeatSuccess = func() { calls++ }
+	})
+	if _, err := b.Beat(context.Background()); err != nil {
+		t.Fatalf("Beat: %v", err)
+	}
+	if cl.lastReq.UpdateResult == nil || *cl.lastReq.UpdateResult != proto.UpdateResultOk {
+		t.Errorf("update_result not attached: %+v", cl.lastReq.UpdateResult)
+	}
+	if calls != 1 {
+		t.Errorf("OnBeatSuccess calls = %d, want 1", calls)
+	}
+}
+
+func TestBeatOnSuccessNotCalledOnFailure(t *testing.T) {
+	cl := &fakeClient{fn: always(nil, errBoom)}
+	st := newFakeState(true)
+	var calls int
+	b := newBeater(t, st, cl, &fakeAudit{}, func(d *heartbeat.Deps) {
+		d.OnBeatSuccess = func() { calls++ }
+	})
+	if _, err := b.Beat(context.Background()); err == nil {
+		t.Fatal("expected a beat failure")
+	}
+	if calls != 0 {
+		t.Errorf("OnBeatSuccess must not fire on failure; calls = %d", calls)
+	}
+}
+
+var errBoom = errorsNew("boom")
+
+func errorsNew(s string) error { return &simpleErr{s} }
+
+type simpleErr struct{ s string }
+
+func (e *simpleErr) Error() string { return e.s }

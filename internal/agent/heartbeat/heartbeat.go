@@ -105,6 +105,14 @@ type Deps struct {
 	// whose response set work_available=true. The composition root (S1-T19) wires
 	// this to the task-poll loop's Poke so a heartbeat can nudge a sooner poll.
 	WorkAvailable chan<- struct{}
+	// UpdateReport, when non-nil, supplies the post-update self-report attached to
+	// each heartbeat request (S1-T26, UPD-4): the composition root returns "ok" on a
+	// post-update boot and nil otherwise. A nil return omits the field.
+	UpdateReport func() *proto.UpdateResult
+	// OnBeatSuccess, when non-nil, is called after every SUCCESSFUL beat. The
+	// composition root uses it to write the local health record (state\health.json)
+	// once the new agent has proven it can reach the SaaS (S1-T26).
+	OnBeatSuccess func()
 	// Now/Sleep/Rand are injectable for tests; nil uses production defaults.
 	Now   func() time.Time
 	Sleep func(ctx context.Context, d time.Duration) error
@@ -195,6 +203,9 @@ func (b *Beater) Beat(ctx context.Context) (*BeatResult, error) {
 		ProtocolVersion: proto.ProtocolVersion(wireversion.CurrentProtocolVersion),
 		Status:          proto.Idle, // Sprint 1: no backup/restore/update engine running
 	}
+	if b.deps.UpdateReport != nil {
+		req.UpdateResult = b.deps.UpdateReport() // post-update self-report (UPD-4); nil omits
+	}
 
 	resp, err := b.deps.Client.Heartbeat(ctx, b.deviceID, req)
 	durMS := b.deps.Now().Sub(start).Milliseconds()
@@ -217,6 +228,9 @@ func (b *Beater) Beat(ctx context.Context) (*BeatResult, error) {
 
 	next := b.nextInterval(resp.NextHeartbeatSeconds, resp.PollJitterPct)
 	b.onSuccess()
+	if b.deps.OnBeatSuccess != nil {
+		b.deps.OnBeatSuccess() // S1-T26: write the local health record after a real beat
+	}
 	b.logBeatOK(durMS, next, resp.WorkAvailable, rotated, gap)
 
 	return &BeatResult{

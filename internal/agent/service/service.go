@@ -180,6 +180,49 @@ func (s *Service) Control(action string) error {
 	return kservice.Control(s.ksvc, action)
 }
 
+// ServiceStatus is the OS service's run state, as observed by the service manager.
+type ServiceStatus int
+
+const (
+	// StatusUnknown means the state could not be determined (e.g. not installed,
+	// or a query error).
+	StatusUnknown ServiceStatus = iota
+	// StatusRunning means the service is running.
+	StatusRunning
+	// StatusStopped means the service is installed but not running.
+	StatusStopped
+)
+
+func (s ServiceStatus) String() string {
+	switch s {
+	case StatusRunning:
+		return "running"
+	case StatusStopped:
+		return "stopped"
+	default:
+		return "unknown"
+	}
+}
+
+// Status reports the service's current run state (Running/Stopped/Unknown). The
+// updater's post-update health gate (S1-T26) uses it as one of the two required
+// pass conditions. It fails CLOSED: any query error yields StatusUnknown plus the
+// error, so a transient SCM/systemd failure can never be misread as Running.
+func (s *Service) Status() (ServiceStatus, error) {
+	st, err := s.ksvc.Status()
+	if err != nil {
+		return StatusUnknown, err
+	}
+	switch st {
+	case kservice.StatusRunning:
+		return StatusRunning, nil
+	case kservice.StatusStopped:
+		return StatusStopped, nil
+	default:
+		return StatusUnknown, nil
+	}
+}
+
 // Interactive reports whether the process runs in the foreground (console) rather
 // than under a service manager.
 func Interactive() bool { return kservice.Interactive() }

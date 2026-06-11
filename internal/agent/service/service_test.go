@@ -287,3 +287,34 @@ func TestNewDefaultsName(t *testing.T) {
 	_ = svc // name defaulted to DefaultName internally; New must not error
 	_ = time.Now
 }
+
+// TestStatusFailsClosedOnQueryError exercises the S1-T26 fail-closed contract:
+// querying a service that is not installed makes the SCM/launchd query error, and
+// Status() must return StatusUnknown (never Running) + a non-nil error.
+func TestStatusFailsClosedOnQueryError(t *testing.T) {
+	r := &fakeRunnable{runFn: func(ctx context.Context) error { <-ctx.Done(); return nil }}
+	svc, err := New(Config{Name: "beyz-backup-uninstalled-probe-t26", Runnable: r})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	st, serr := svc.Status()
+	// Whatever the host reports, an uninstalled service must NEVER read as Running.
+	if st == StatusRunning {
+		t.Errorf("uninstalled service must not report Running; got %v (err=%v)", st, serr)
+	}
+	// The security-relevant branch: on a query error, fail closed to Unknown.
+	if serr != nil && st != StatusUnknown {
+		t.Errorf("query error must yield StatusUnknown (fail closed); got %v, err=%v", st, serr)
+	}
+	if serr == nil {
+		t.Logf("note: host returned status=%v with no error (service queryable)", st)
+	}
+}
+
+func TestServiceStatusString(t *testing.T) {
+	for st, want := range map[ServiceStatus]string{StatusRunning: "running", StatusStopped: "stopped", StatusUnknown: "unknown", ServiceStatus(99): "unknown"} {
+		if got := st.String(); got != want {
+			t.Errorf("ServiceStatus(%d).String() = %q, want %q", st, got, want)
+		}
+	}
+}
