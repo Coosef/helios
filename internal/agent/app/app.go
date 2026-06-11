@@ -156,7 +156,7 @@ func New(opts Options) (*App, error) {
 
 	return &App{
 		log:     log,
-		b:       &prodBuilder{cfg: cfg, log: log, store: store, idm: idm, client: client},
+		b:       &prodBuilder{cfg: cfg, log: log, store: store, idm: idm, client: client, stateDir: opts.StateDir},
 		closers: closers,
 	}, nil
 }
@@ -318,11 +318,12 @@ func enrolled(s stateReader) (bool, error) {
 // ---- production builder (real wiring) ---------------------------------------
 
 type prodBuilder struct {
-	cfg    *config.Config
-	log    *logging.Logger
-	store  *state.Store
-	idm    *identity.Manager
-	client *saasclient.Client
+	cfg      *config.Config
+	log      *logging.Logger
+	store    *state.Store
+	idm      *identity.Manager
+	client   *saasclient.Client
+	stateDir string // for the S1-T26 post-update health handshake (marker + health.json)
 
 	runtimeEm *audit.Emitter // shared by heartbeat+tasks (serializes the audit chain)
 }
@@ -354,6 +355,7 @@ func (pb *prodBuilder) Heartbeat(workAvailable chan<- struct{}) (loopRunner, err
 	if err != nil {
 		return nil, err
 	}
+	rep := newPostUpdateReporter(pb.stateDir, pb.log)
 	return heartbeat.New(heartbeat.Deps{
 		Config:        pb.cfg,
 		Client:        pb.client,
@@ -361,6 +363,8 @@ func (pb *prodBuilder) Heartbeat(workAvailable chan<- struct{}) (loopRunner, err
 		Audit:         em,
 		Log:           pb.log,
 		WorkAvailable: workAvailable,
+		UpdateReport:  rep.report,
+		OnBeatSuccess: rep.onBeatSuccess,
 	})
 }
 
