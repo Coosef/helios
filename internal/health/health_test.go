@@ -175,3 +175,20 @@ func TestReadRejectsOversizedFile(t *testing.T) {
 		t.Errorf("oversized file: %v, want ErrMalformed", err)
 	}
 }
+
+func TestWriteAtomicCleansTempOnRenameFailure(t *testing.T) {
+	dir := t.TempDir()
+	// Make the destination a DIRECTORY so the final rename fails AFTER the temp
+	// has been written+fsync'd — this exercises the temp-cleanup-on-rename branch
+	// (the HIGH "temp file leak on rename failure" fix).
+	if err := os.Mkdir(health.HealthPath(dir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	err := health.WriteHealth(dir, health.Record{UpdateID: "u", Result: health.ResultOK, WrittenAt: "2026-01-02T03:04:05Z"})
+	if err == nil {
+		t.Fatal("WriteHealth should fail when the target path is a directory")
+	}
+	if _, serr := os.Stat(health.HealthPath(dir) + ".tmp"); !errors.Is(serr, os.ErrNotExist) {
+		t.Error("temp file must be cleaned up after a failed rename (no leak)")
+	}
+}
