@@ -39,9 +39,13 @@ const SchemaVersion = 1
 
 const genesisSalt = "|beyz-audit-genesis-v1"
 
-// Source identifies the producing subsystem. Only "agent" is valid in Sprint 1;
-// "server", "restore-engine", and "updater" are reserved for the future.
-const SourceAgent = "agent"
+// Source identifies the producing subsystem. "agent" is the agent process;
+// "updater" is the on-demand updater (S1-T27), which writes its OWN audit spool
+// (never the agent's hash chain). "server" and "restore-engine" are reserved.
+const (
+	SourceAgent   = "agent"
+	SourceUpdater = "updater"
+)
 
 // Category values.
 const (
@@ -80,6 +84,7 @@ const (
 	EventServiceStarted   = "service.started"
 	EventServiceStopped   = "service.stopped"
 	EventUpdateRolledBack = "update.rolled_back"
+	EventUpdateFailed     = "update.failed"
 )
 
 // Sentinel errors. Match with errors.Is.
@@ -111,18 +116,18 @@ type Record struct {
 	SchemaVersion int     `json:"schema_version"`
 	Seq           uint64  `json:"seq"`
 	PrevHash      string  `json:"prev_hash"`
-	ThisHash      string  `json:"this_hash"`            // excluded from the hash
-	TSLocal       string  `json:"ts_local"`             // device clock (RFC3339)
-	TSServer      *string `json:"ts_server"`            // RESERVED, server-filled; excluded from the hash
-	ClockSkewMS   *int    `json:"clock_skew_ms"`        // device vs server (GAP-5)
-	Source        string  `json:"source"`              // "agent"
-	EventType     string  `json:"event_type"`          // controlled vocabulary
+	ThisHash      string  `json:"this_hash"`     // excluded from the hash
+	TSLocal       string  `json:"ts_local"`      // device clock (RFC3339)
+	TSServer      *string `json:"ts_server"`     // RESERVED, server-filled; excluded from the hash
+	ClockSkewMS   *int    `json:"clock_skew_ms"` // device vs server (GAP-5)
+	Source        string  `json:"source"`        // "agent"
+	EventType     string  `json:"event_type"`    // controlled vocabulary
 	Category      string  `json:"category"`
 	Severity      string  `json:"severity"`
 	Outcome       string  `json:"outcome"`
-	Actor         string  `json:"actor"`               // system|installer|admin:<id>|user:<id>
+	Actor         string  `json:"actor"` // system|installer|admin:<id>|user:<id>
 	TenantID      string  `json:"tenant_id"`
-	ParentOrgID   *string `json:"parent_org_id"`       // MSP hierarchy
+	ParentOrgID   *string `json:"parent_org_id"` // MSP hierarchy
 	DeviceID      string  `json:"device_id"`
 	AgentVersion  string  `json:"agent_version"`
 	Target        *Target `json:"target"`
@@ -191,7 +196,7 @@ var validEventTypes = newSet(
 	"update.offered", "update.manifest_verified", "update.signature_invalid",
 	"update.hash_mismatch", "update.staged", "update.swapped", "update.health_ok",
 	"update.rolled_back", "update.downgrade_blocked", "update.started",
-	"update.succeeded", "update.signature_failed",
+	"update.succeeded", "update.signature_failed", "update.failed",
 	"integrity.check_failed",
 	"config.tamper_detected", "config.reloaded",
 	"license.issued", "license.renewed", "license.revoked", "license.signature_invalid",
@@ -205,7 +210,7 @@ var (
 		CategoryLifecycle, CategoryLicense, CategoryRestore, CategoryIntegrity)
 	validSeverities = newSet(SeverityInfo, SeverityWarn, SeverityCritical)
 	validOutcomes   = newSet(OutcomeSuccess, OutcomeFailure, OutcomeDenied)
-	validSources    = newSet(SourceAgent)
+	validSources    = newSet(SourceAgent, SourceUpdater)
 )
 
 func newSet(items ...string) map[string]struct{} {
