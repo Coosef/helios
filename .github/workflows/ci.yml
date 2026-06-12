@@ -1,0 +1,194 @@
+name: CI
+
+# S1-T31 CI pipeline. CI/tooling only — no production code. All CI-critical tools are
+# PINNED (no @latest). Jobs invoke the Taskfile where the task is the source of truth
+# (contract, drift) so local == CI. Jobs for unbuilt tasks (installer/T29, Pester/T35,
+# systemd-analyze/T20, Authenticode/T30, full integration/T34, Schemathesis-as-gate)
+# are intentionally ABSENT until their source tasks land.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel superseded runs for the same branch/PR.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Pinned CI-critical tool versions (no @latest).
+  GOLANGCI_LINT_VERSION: v2.1.6
+  GOVULNCHECK_VERSION: v1.1.4
+  TASK_VERSION: v3.39.2
+  NODE_VERSION: "20"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # needed to diff the baseline for only-new-issues
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      # golangci-lint (gosec + staticcheck, via .golangci.yml). only-new-issues
+      # gates NEW code without failing on the pre-existing baseline (tracked for a
+      # separate reviewed cleanup — FI-T31-1; see docs/sprint-1/06-CI.md). This is the
+      # standard incremental-adoption pattern for introducing a linter to a codebase
+      # with existing debt; it still BLOCKS any newly-introduced lint/gosec issue.
+      # only-new-issues diffs against the PR base (reliable on pull_request — the
+      # merge gate). On push to main the repo merges with --no-ff, so the merge
+      # commit's diff is the whole PR; combined with required-PR branch protection,
+      # no new issue reaches main unlinted.
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7 # v7 supports golangci-lint v2.x
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          args: --timeout=5m
+          only-new-issues: true
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go vet ./...
+      - run: go build ./...
+      - run: go test ./...
+      - name: coverage gate (AC-38)
+        run: ./scripts/coverage_gate.sh
+
+  race:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go test -race ./...
+
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: cache ~/.npm (pinned npx tools)
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-prism-${{ env.NODE_VERSION }}-5.15.11
+      - name: install task (pinned)
+        run: go install github.com/go-task/task/v3/cmd/task@${{ env.TASK_VERSION }}
+      - name: contract tests (Prism control-plane + update fixtures)
+        run: task contract
+
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: cache ~/.npm (pinned npx tools)
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-codegen-${{ env.NODE_VERSION }}-0.14.2
+      - name: install task (pinned)
+        run: go install github.com/go-task/task/v3/cmd/task@${{ env.TASK_VERSION }}
+      - name: OpenAPI / codegen drift
+        run: task check:generated
+      - name: update-fixture drift
+        run: |
+          task fixtures
+          git diff --exit-code
+      - name: go.mod / go.sum tidy drift
+        run: |
+          go mod tidy
+          git diff --exit-code
+
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so the secret scan covers every commit
+      - name: gitleaks (secret + private-key scan)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: govulncheck (pinned)
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@${{ env.GOVULNCHECK_VERSION }}
+          govulncheck ./...
+
+  cross:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: windows
+            goarch: amd64
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: cross-compile ${{ matrix.goos }}/${{ matrix.goarch }}
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: go build ./...
+
+  windows-test:
+    runs-on: windows-latest
+    # NON-BLOCKING for now (informational): this is the FIRST real execution of the
+    # Windows code paths (MoveFileEx swap, service.Status). Several existing tests use
+    # os.Chmod(dir, 0o500) to force a write failure, which Windows does not enforce on
+    # directories, so they need a runtime.GOOS=="windows" skip before this job can gate
+    # (FI-T31-2, a separate reviewed test-portability fix). The job still RUNS on every
+    # CI and surfaces real Windows behaviour; it becomes a required gate once green.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go test ./...

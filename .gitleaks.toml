@@ -1,0 +1,20 @@
+title = "Helios gitleaks config (S1-T31)"
+
+# Use gitleaks' built-in ruleset (private keys, cloud creds, tokens, high-entropy).
+[extend]
+useDefault = true
+
+[allowlist]
+description = """
+Public test material only. AC-35 forbids committing any private key; the absence of
+private material in the fixtures is independently enforced by the Go test
+TestNoPrivateKeyMaterialCommitted. These paths hold ONLY public keys and signatures
+(not secrets), which would otherwise trip the generic high-entropy rules.
+"""
+# Anchored with ^ so the allowlist matches ONLY these exact root-relative paths
+# (an unanchored pattern would also suppress e.g. docs/test/fixtures/secret.pem).
+paths = [
+  '''^build/keys/update_pub_test\.pem$''',     # PUBLIC update key (private half discarded)
+  '''^internal/updater/trust/keyset\.json$''', # embedded PUBLIC keyset
+  '''^test/fixtures/.*''',                       # signed fixtures: public keyset + Ed25519 signatures
+]
