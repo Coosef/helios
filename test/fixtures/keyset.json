@@ -1,0 +1,17 @@
+{
+  "keys": [
+    {
+      "key_id": "beyz-test-2026-01",
+      "public_key": "GX9rI+FshTLGq8g4+s1ep4m+DHaykgM0A5v6iz02jWE=",
+      "algorithm": "ed25519",
+      "revoked": false
+    },
+    {
+      "key_id": "beyz-test-revoked",
+      "public_key": "RQigeqlBcH8+stuUyIl6gLLBGXR2tt4hOsJz332GxP8=",
+      "algorithm": "ed25519",
+      "revoked": false
+    }
+  ],
+  "schema_version": 1
+}
