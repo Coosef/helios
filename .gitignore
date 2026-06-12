@@ -38,3 +38,6 @@ go.work.sum
 secrets.*
 *.env
 .env
+
+# stray go build artifacts (binaries built into repo root)
+/mkfixtures

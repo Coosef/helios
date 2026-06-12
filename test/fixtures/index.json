@@ -1,0 +1,77 @@
+{
+  "description": "S1-T28 deterministic update fixtures. Regenerate with: go run ./cmd/mkfixtures. Verify against internal/mocksaas.TestKeySet() (NEVER trust.Embedded()).",
+  "fixtures": [
+    {
+      "name": "valid",
+      "platform": "linux",
+      "arch": "amd64",
+      "baseline": "1.1.0",
+      "expect_proceed": true,
+      "expect_reason": "ok",
+      "manifest": "valid/manifest.json",
+      "artifact": "valid/artifact.bin"
+    },
+    {
+      "name": "invalid-signature",
+      "platform": "linux",
+      "arch": "amd64",
+      "baseline": "1.1.0",
+      "expect_proceed": false,
+      "expect_reason": "manifest_rejected",
+      "manifest": "invalid-signature/manifest.json",
+      "artifact": "invalid-signature/artifact.bin"
+    },
+    {
+      "name": "revoked-key",
+      "platform": "linux",
+      "arch": "amd64",
+      "baseline": "1.1.0",
+      "expect_proceed": false,
+      "expect_reason": "manifest_rejected",
+      "manifest": "revoked-key/manifest.json",
+      "artifact": "revoked-key/artifact.bin"
+    },
+    {
+      "name": "hash-mismatch",
+      "platform": "linux",
+      "arch": "amd64",
+      "baseline": "1.1.0",
+      "expect_proceed": true,
+      "expect_reason": "ok",
+      "manifest": "hash-mismatch/manifest.json",
+      "artifact": "hash-mismatch/artifact.bin"
+    },
+    {
+      "name": "downgrade-blocked",
+      "platform": "linux",
+      "arch": "amd64",
+      "baseline": "1.1.0",
+      "expect_proceed": false,
+      "expect_reason": "downgrade_blocked",
+      "manifest": "downgrade-blocked/manifest.json",
+      "artifact": "downgrade-blocked/artifact.bin"
+    },
+    {
+      "name": "update-not-allowed",
+      "platform": "linux",
+      "arch": "amd64",
+      "baseline": "1.1.0",
+      "expect_proceed": false,
+      "expect_reason": "update_not_allowed",
+      "manifest": "update-not-allowed/manifest.json",
+      "artifact": "update-not-allowed/artifact.bin"
+    },
+    {
+      "name": "no-artifact",
+      "platform": "linux",
+      "arch": "amd64",
+      "baseline": "1.1.0",
+      "expect_proceed": false,
+      "expect_reason": "no_artifact",
+      "manifest": "no-artifact/manifest.json",
+      "artifact": "no-artifact/artifact.bin"
+    }
+  ],
+  "keyset": "keyset.json",
+  "schema_version": 1
+}

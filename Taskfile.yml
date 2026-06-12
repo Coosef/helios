@@ -127,10 +127,40 @@ tasks:
       - task gen:proto
       - git diff --exit-code -- pkg/proto go.mod go.sum
 
-  contract:
-    desc: '[S1-T28] Contract tests against the mock SaaS (Prism/Schemathesis)'
+  fixtures:
+    desc: '[S1-T28] (Re)generate the signed update fixtures under test/fixtures/ (public material only)'
     cmds:
-      - echo "contract is implemented in S1-T28"
+      - go run ./cmd/mkfixtures
+      - go test ./internal/mocksaas/...
+
+  contract:
+    desc: '[S1-T28] Contract tests: Prism control-plane mock + signed update fixtures'
+    cmds:
+      - |
+        set -e
+        npx --yes @stoplight/prism-cli@latest mock api/openapi.yaml -p 4010 >/tmp/prism-mock.log 2>&1 &
+        PRISM_PID=$!
+        trap "kill $PRISM_PID 2>/dev/null || true" EXIT
+        # Prism validates requests; readiness only needs the port serving (any HTTP code).
+        ready=
+        for i in $(seq 1 30); do
+          if curl -s -o /dev/null http://127.0.0.1:4010/v1/enroll; then ready=1; break; fi
+          sleep 1
+        done
+        if [ -z "$ready" ]; then echo "ERROR: Prism mock did not start on :4010 (see /tmp/prism-mock.log)"; cat /tmp/prism-mock.log; exit 1; fi
+        PRISM_URL=http://127.0.0.1:4010 go test ./internal/mocksaas/...
+      - echo "contract OK — Prism control-plane mock + update fixtures verified"
+
+  contract:fuzz:
+    desc: '[S1-T28] (opt-in) Schemathesis property-fuzz the spec against Prism (needs Python/uvx)'
+    cmds:
+      - |
+        set -e
+        npx --yes @stoplight/prism-cli@latest mock api/openapi.yaml -p 4010 >/tmp/prism-fuzz.log 2>&1 &
+        PRISM_PID=$!
+        trap "kill $PRISM_PID 2>/dev/null || true" EXIT
+        sleep 3
+        uvx schemathesis run --url http://127.0.0.1:4010 --checks all api/openapi.yaml
 
   cross:
     desc: '[S1-T20/T30] Cross-compile windows/amd64 + linux/amd64,arm64'
