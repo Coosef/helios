@@ -94,12 +94,12 @@ tasks:
       # Redocly is the canonical validator: it is fully OpenAPI 3.1-aware. Spectral
       # currently crashes on 3.1 `type: [..., "null"]` nodes (nimma bug), so it is
       # not used as the gate.
-      - npx --yes @redocly/cli@latest lint api/openapi.yaml
+      - npx --yes @redocly/cli@1 lint api/openapi.yaml # pinned to the 1.x major (no @latest)
 
   spec:mock:
     desc: '[S1-T02] Boot a Prism mock of the control-plane spec on :4010'
     cmds:
-      - npx --yes @stoplight/prism-cli@latest mock api/openapi.yaml -p 4010
+      - npx --yes @stoplight/prism-cli@5.15.11 mock api/openapi.yaml -p 4010
 
   gen:
     desc: 'Regenerate all generated artifacts from their sources of truth'
@@ -138,10 +138,14 @@ tasks:
     cmds:
       - |
         set -e
-        npx --yes @stoplight/prism-cli@latest mock api/openapi.yaml -p 4010 >/tmp/prism-mock.log 2>&1 &
+        npx --yes @stoplight/prism-cli@5.15.11 mock api/openapi.yaml -p 4010 >/tmp/prism-mock.log 2>&1 &
         PRISM_PID=$!
         trap "kill $PRISM_PID 2>/dev/null || true" EXIT
-        # Prism validates requests; readiness only needs the port serving (any HTTP code).
+        # Prism validates requests; readiness only needs the port serving (any HTTP
+        # code). Bounded 30s poll; on timeout we dump the Prism log so a real npm/npx
+        # download failure surfaces its cause (the ~/.npm CI cache makes that rare).
+        # (Note: $PRISM_PID is the npx wrapper, which exits after spawning Prism, so
+        # the port poll — not a PID check — is the reliable readiness signal.)
         ready=
         for i in $(seq 1 30); do
           if curl -s -o /dev/null http://127.0.0.1:4010/v1/enroll; then ready=1; break; fi
@@ -156,7 +160,7 @@ tasks:
     cmds:
       - |
         set -e
-        npx --yes @stoplight/prism-cli@latest mock api/openapi.yaml -p 4010 >/tmp/prism-fuzz.log 2>&1 &
+        npx --yes @stoplight/prism-cli@5.15.11 mock api/openapi.yaml -p 4010 >/tmp/prism-fuzz.log 2>&1 &
         PRISM_PID=$!
         trap "kill $PRISM_PID 2>/dev/null || true" EXIT
         sleep 3
