@@ -30,6 +30,10 @@ type fakeBuilder struct {
 	enrollErr   error
 	enrollCalls int
 
+	token        string   // EnrollToken() return (simulates an env/config token)
+	setTokens    []string // every value passed to SetEnrollToken, in order
+	tokenAtEnrol string   // snapshot of the token at the moment Enroll runs
+
 	hbRun      func(ctx context.Context, wa chan<- struct{}) error
 	tkRun      func(ctx context.Context, poke <-chan struct{}) error
 	hbBuildErr error
@@ -41,8 +45,16 @@ type fakeBuilder struct {
 
 func (f *fakeBuilder) IsEnrolled() (bool, error) { return f.enrolled, f.enrolledErr }
 
+func (f *fakeBuilder) EnrollToken() string { return f.token }
+
+func (f *fakeBuilder) SetEnrollToken(token string) {
+	f.token = token
+	f.setTokens = append(f.setTokens, token)
+}
+
 func (f *fakeBuilder) Enroll(_ context.Context) error {
 	f.enrollCalls++
+	f.tokenAtEnrol = f.token
 	if f.onEnroll != nil {
 		f.onEnroll()
 	}
