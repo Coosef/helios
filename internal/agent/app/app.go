@@ -83,13 +83,22 @@ type builder interface {
 	Enroll(ctx context.Context) error
 	Heartbeat(workAvailable chan<- struct{}) (loopRunner, error)
 	Tasks(poke <-chan struct{}) (loopRunner, error)
+
+	// EnrollToken reports the token currently configured for enrollment (sourced
+	// from BEYZ_ENROLLMENT_TOKEN); "" means none is set. SetEnrollToken installs a
+	// token resolved from the one-shot file. Together they let Run apply the frozen
+	// precedence (env wins; file is the fallback) without the file-handling logic
+	// leaking into config.Load or enroll.Enroller.
+	EnrollToken() string
+	SetEnrollToken(token string)
 }
 
 // App is the composition root.
 type App struct {
-	log     *logging.Logger
-	b       builder
-	closers []func() error // released in reverse (LIFO) by Close
+	log      *logging.Logger
+	b        builder
+	stateDir string        // holds the one-shot enroll-token file (see enrolltoken.go)
+	closers  []func() error // released in reverse (LIFO) by Close
 }
 
 // New builds and connects all collaborators, seeds the in-memory session token
@@ -155,9 +164,10 @@ func New(opts Options) (*App, error) {
 	}
 
 	return &App{
-		log:     log,
-		b:       &prodBuilder{cfg: cfg, log: log, store: store, idm: idm, client: client, stateDir: opts.StateDir},
-		closers: closers,
+		log:      log,
+		b:        &prodBuilder{cfg: cfg, log: log, store: store, idm: idm, client: client, stateDir: opts.StateDir},
+		stateDir: opts.StateDir,
+		closers:  closers,
 	}, nil
 }
 
@@ -169,9 +179,29 @@ func (a *App) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("%w: enrolled check: %v", ErrStateInit, err)
 	}
-	if !ok {
+	if ok {
+		// Already enrolled: a lingering one-shot token file must never re-trigger
+		// enrollment (anti-hijack) nor sit on disk as a stale bearer credential.
+		// Purge it and continue (covers the KEEPSTATE-reinstall and crash-after-
+		// enroll-before-delete paths).
+		a.purgeOneShotToken("already_enrolled")
+	} else {
 		a.logInfo("app.enrollment_required")
-		if eerr := a.b.Enroll(ctx); eerr != nil {
+		a.resolveOneShotToken() // env/config wins; else the installer one-shot file
+
+		eerr := a.b.Enroll(ctx)
+
+		// Delete-on-consume: a DEFINITIVE outcome spends the one-shot file —
+		// success (the token is used up) or a rejected/consumed token (it is dead
+		// server-side; keeping it just loops). A transient failure PRESERVES the
+		// file so a retry can reuse the still-valid token. This runs regardless of
+		// which source supplied the token, so an env-sourced enroll still cleans a
+		// leftover file (no bearer token lingers on disk).
+		if eerr == nil || errors.Is(eerr, enroll.ErrTokenRejected) {
+			a.purgeOneShotToken("consumed")
+		}
+
+		if eerr != nil {
 			// A shutdown signal during the startup enroll is graceful, not a hard
 			// failure. The enroll error chain is flattened (so errors.Is won't see
 			// the ctx error), hence the direct ctx.Err() check.
@@ -210,6 +240,45 @@ func (a *App) Logger() *logging.Logger { return a.log }
 func (a *App) logInfo(event string) {
 	if a.log != nil {
 		a.log.Info(event).Msg("")
+	}
+}
+
+// logWarnErr emits a warning carrying an error and a reason, never a token value.
+func (a *App) logWarnErr(event string, err error, reason string) {
+	if a.log != nil {
+		a.log.Warn(event).Err(err).Str("reason", reason).Msg("")
+	}
+}
+
+// resolveOneShotToken applies the frozen source precedence for the enrollment
+// token. An env/config-supplied token wins outright; only when none is set does it
+// consult the installer one-shot file. An empty/whitespace file is a poison-pill
+// (deleted now so it cannot loop); an unreadable file fails closed (no token) and
+// is PRESERVED for a later retry. The token value is never logged.
+func (a *App) resolveOneShotToken() {
+	if a.b.EnrollToken() != "" {
+		return // env/config wins; any leftover file is cleaned on a definitive outcome
+	}
+	token, result, rerr := readEnrollTokenFile(a.stateDir)
+	switch result {
+	case tokenFileValid:
+		a.b.SetEnrollToken(token)
+		a.logInfo("app.enroll_token.file_loaded")
+	case tokenFileEmpty:
+		a.logInfo("app.enroll_token.empty_discarded")
+		a.purgeOneShotToken("empty_poison_pill")
+	case tokenFileUnreadable:
+		a.logWarnErr("app.enroll_token.file_unreadable", rerr, "fail_closed_preserve")
+	case tokenFileAbsent:
+		// No token from either source; enrollment fails closed (ErrNoEnrollmentToken).
+	}
+}
+
+// purgeOneShotToken best-effort deletes the one-shot token file, logging the
+// failure (path only, never the value) without aborting the run.
+func (a *App) purgeOneShotToken(reason string) {
+	if err := purgeEnrollTokenFile(a.stateDir); err != nil {
+		a.logWarnErr("app.enroll_token.purge_failed", err, reason)
 	}
 }
 
@@ -329,6 +398,16 @@ type prodBuilder struct {
 }
 
 func (pb *prodBuilder) IsEnrolled() (bool, error) { return enrolled(pb.store) }
+
+// EnrollToken exposes the configured enrollment token (sourced from the env var
+// by config.Load); "" when none is set. SetEnrollToken installs a token resolved
+// from the one-shot file. The Secret stays out of config.yaml (json:"-") and is
+// redacted at the log sink.
+func (pb *prodBuilder) EnrollToken() string { return pb.cfg.General.EnrollmentToken.Expose() }
+
+func (pb *prodBuilder) SetEnrollToken(token string) {
+	pb.cfg.General.EnrollmentToken = config.Secret(token)
+}
 
 func (pb *prodBuilder) Enroll(ctx context.Context) error {
 	em, err := pb.newEmitter() // fresh, single-threaded emitter for the enroll exchange
