@@ -227,3 +227,54 @@ jobs:
           name: BeyzBackupSetup
           path: installer/Output/*.exe
           if-no-files-found: error
+
+  pester:
+    runs-on: windows-latest
+    needs: installer-build
+    # NON-BLOCKING (informational): S1-T35 Windows installer + service validation.
+    # Drives the REAL SCM + the installer artifact (silent install, ACLs, service,
+    # token-not-logged, uninstall/KEEPSTATE). The windows runner is admin. Becomes
+    # a required gate only once stable. Pester is pinned. Consumes the installer
+    # artifact from installer-build, building it as a fallback if absent.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: build windows/amd64 binaries
+        env:
+          GOOS: windows
+          GOARCH: amd64
+          CGO_ENABLED: "0"
+        run: |
+          go build -o dist/windows/beyz-backup-agent.exe ./cmd/agent
+          go build -o dist/windows/beyz-backup-updater.exe ./cmd/updater
+      - name: download installer artifact (best-effort)
+        uses: actions/download-artifact@v4
+        with:
+          name: BeyzBackupSetup
+          path: installer/Output
+        continue-on-error: true
+      - name: build installer if artifact missing (fallback)
+        shell: pwsh
+        run: |
+          if (-not (Get-ChildItem installer/Output/BeyzBackupSetup-*.exe -ErrorAction SilentlyContinue)) {
+            choco install innosetup --version=6.2.2 --no-progress -y
+            & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DBinDir=dist\windows installer\beyz-backup.iss
+          }
+      - name: install Pester (pinned)
+        shell: pwsh
+        run: Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force -SkipPublisherCheck
+      - name: run Pester (installer + service suites)
+        shell: pwsh
+        env:
+          BEYZ_BIN_DIR: ${{ github.workspace }}\dist\windows
+        run: |
+          Import-Module Pester -RequiredVersion 5.7.1
+          $cfg = New-PesterConfiguration
+          $cfg.Run.Path = 'test/pester'
+          $cfg.Run.Exit = $true
+          $cfg.Output.Verbosity = 'Detailed'
+          Invoke-Pester -Configuration $cfg
