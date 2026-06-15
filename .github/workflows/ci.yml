@@ -77,6 +77,25 @@ jobs:
           cache: true
       - run: go test -race ./...
 
+  security:
+    runs-on: ubuntu-latest
+    # BLOCKING required check (S1-T32 / AC-38): the theme-G negative security
+    # suite — secrets never logged, SPKI pin enforced, token-replay/clone fail
+    # closed, manifest tamper/unknown-key/revoked-key/hash-mismatch/downgrade
+    # rejected with nothing swapped, state tamper fails closed, and no return-true
+    # verify stub. This MUST be a required, non-bypassable merge check together with
+    # gitleaks (branch protection — see docs/sprint-1/09-SECURITY-GATES.md).
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: install task (pinned)
+        run: go install github.com/go-task/task/v3/cmd/task@${{ env.TASK_VERSION }}
+      - name: security negative gate (task test:negative)
+        run: task test:negative
+
   contract:
     runs-on: ubuntu-latest
     steps:

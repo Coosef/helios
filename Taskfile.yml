@@ -70,6 +70,14 @@ tasks:
     cmds:
       - go test -race ./...
 
+  test:negative:
+    desc: '[S1-T32] Theme-G security negative suite (fail-closed controls) — the CI security gate'
+    cmds:
+      # The consolidated end-to-end theme-G suite PLUS the security-critical
+      # packages whose negative tests must gate merges (AC-38: signature-negative
+      # tests as a required check).
+      - go test ./test/security/... ./internal/updater/verify/... ./internal/updater/manifestcheck/... ./internal/updater/trust/... ./internal/transport/httpclient/... ./internal/agent/logging/... ./internal/agent/state/... ./internal/agent/enroll/...
+
   cover:
     desc: Run tests with coverage and print a function summary
     cmds:
