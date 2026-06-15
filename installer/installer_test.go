@@ -2,9 +2,43 @@ package installer
 
 import (
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// TestInstallerPowerShellScriptsParse parse-validates every installer PowerShell
+// helper with the PowerShell engine. The installer invokes these at runtime
+// (powershell.exe -File ...), so a syntax error makes the install fail closed —
+// a class of bug the string-content tests below CANNOT catch (a present-but-
+// malformed string still "contains" its substring). Skips when pwsh is absent;
+// GitHub ubuntu/windows runners ship pwsh, so it runs in CI.
+func TestInstallerPowerShellScriptsParse(t *testing.T) {
+	pwsh, err := exec.LookPath("pwsh")
+	if err != nil {
+		t.Skip("pwsh not on PATH; PowerShell parse-validation runs in CI (runners ship pwsh)")
+	}
+	scripts, err := filepath.Glob("scripts/*.ps1")
+	if err != nil {
+		t.Fatalf("glob installer/scripts/*.ps1: %v", err)
+	}
+	if len(scripts) == 0 {
+		t.Fatal("no installer/scripts/*.ps1 found")
+	}
+	for _, s := range scripts {
+		abs, _ := filepath.Abs(s)
+		// Parse the file with the .NET PS parser; emit each parser error and exit
+		// non-zero if any. (`exit 0` only on a clean parse.)
+		ps := `$e=$null;` +
+			`[void][System.Management.Automation.Language.Parser]::ParseFile('` + abs + `',[ref]$null,[ref]$e);` +
+			`if($e -and $e.Count){$e|ForEach-Object{[Console]::Error.WriteLine("line $($_.Extent.StartLineNumber): $($_.Message)")};exit 1}`
+		out, err := exec.Command(pwsh, "-NoProfile", "-Command", ps).CombinedOutput()
+		if err != nil {
+			t.Errorf("%s has PowerShell parse errors:\n%s", s, strings.TrimSpace(string(out)))
+		}
+	}
+}
 
 func has(t *testing.T, hay, needle, why string) {
 	t.Helper()
@@ -49,8 +83,8 @@ func TestACLMatrix(t *testing.T) {
 	has(t, a, `S-1-5-32-545`, "Users SID")
 	has(t, a, `/inheritance:r`, "inheritance broken on every node")
 	has(t, a, `@($state, $update)`, "state + update locked to SYSTEM+Admins only")
-	has(t, a, `$SID_USERS:(OI)(CI)RX`, "logs: Users read+execute")
-	has(t, a, `$SID_USERS:R`, "config.yaml: Users read")
+	has(t, a, `${SID_USERS}:(OI)(CI)RX`, "logs: Users read+execute")
+	has(t, a, `${SID_USERS}:R`, "config.yaml: Users read")
 	has(t, a, `exit 1`, "fail-closed when icacls fails")
 	has(t, a, `state ACL still grants Users`, "post-hardening Users/Everyone verification")
 }

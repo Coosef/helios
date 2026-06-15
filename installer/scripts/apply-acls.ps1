@@ -63,28 +63,28 @@ foreach ($d in @($Root, $state, $logs, $update)) {
 
 # Root: break inheritance, SYSTEM + Administrators Full (subtree). No Users.
 Invoke-Icacls @($Root, '/inheritance:r',
-    '/grant:r', "$SID_SYSTEM:(OI)(CI)F",
-    '/grant:r', "$SID_ADMINS:(OI)(CI)F") 'root'
+    '/grant:r', "${SID_SYSTEM}:(OI)(CI)F",
+    '/grant:r', "${SID_ADMINS}:(OI)(CI)F") 'root'
 
 # state\ and update\: SYSTEM + Administrators ONLY (Users removed).
 foreach ($d in @($state, $update)) {
     Invoke-Icacls @($d, '/inheritance:r',
-        '/grant:r', "$SID_SYSTEM:(OI)(CI)F",
-        '/grant:r', "$SID_ADMINS:(OI)(CI)F") $d
+        '/grant:r', "${SID_SYSTEM}:(OI)(CI)F",
+        '/grant:r', "${SID_ADMINS}:(OI)(CI)F") $d
 }
 
 # logs\: SYSTEM/Admin Full, Users Read+Execute (read-only).
 Invoke-Icacls @($logs, '/inheritance:r',
-    '/grant:r', "$SID_SYSTEM:(OI)(CI)F",
-    '/grant:r', "$SID_ADMINS:(OI)(CI)F",
-    '/grant:r', "$SID_USERS:(OI)(CI)RX") 'logs'
+    '/grant:r', "${SID_SYSTEM}:(OI)(CI)F",
+    '/grant:r', "${SID_ADMINS}:(OI)(CI)F",
+    '/grant:r', "${SID_USERS}:(OI)(CI)RX") 'logs'
 
 # config.yaml: SYSTEM/Admin Full, Users Read (non-secret operator settings).
 if (Test-Path -LiteralPath $config) {
     Invoke-Icacls @($config, '/inheritance:r',
-        '/grant:r', "$SID_SYSTEM:F",
-        '/grant:r', "$SID_ADMINS:F",
-        '/grant:r', "$SID_USERS:R") 'config.yaml'
+        '/grant:r', "${SID_SYSTEM}:F",
+        '/grant:r', "${SID_ADMINS}:F",
+        '/grant:r', "${SID_USERS}:R") 'config.yaml'
 }
 
 # Fail-closed verification: state\ must NOT be reachable by Users / Everyone.
