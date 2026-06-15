@@ -24,6 +24,7 @@ import (
 
 	"github.com/beyzbackup/beyz-backup/internal/agent/audit"
 	"github.com/beyzbackup/beyz-backup/internal/agent/config"
+	"github.com/beyzbackup/beyz-backup/internal/agent/paths"
 	"github.com/beyzbackup/beyz-backup/internal/agent/trustpins"
 	"github.com/beyzbackup/beyz-backup/internal/buildinfo"
 	"github.com/beyzbackup/beyz-backup/internal/transport/httpclient"
@@ -38,7 +39,6 @@ import (
 const (
 	binaryName       = "beyz-backup-updater"
 	agentServiceName = "BeyzBackupAgent"
-	agentBinaryName  = "beyz-backup-agent"
 	defaultManifest  = "/v1/updates/manifest"
 	maxManifestBytes = 1 << 20 // 1 MiB cap on the manifest body
 )
@@ -89,13 +89,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitError
 	}
 
+	p := paths.Default()
 	opts := bootstrapOptions{
-		configPath:  orDefault(configPath, defaultConfigPath()),
-		stateDir:    orDefault(stateDir, defaultStateDir()),
+		configPath:  orDefault(configPath, p.ConfigPath),
+		stateDir:    orDefault(stateDir, p.StateDir),
 		manifestURL: manifestURL,
-		liveBinary:  orDefault(liveBinary, defaultLiveBinary()),
-		liveConfig:  orDefault(liveConfig, defaultConfigPath()),
-		stagingDir:  orDefault(stagingDir, defaultStagingDir()),
+		liveBinary:  orDefault(liveBinary, p.AgentBinaryPath),
+		liveConfig:  orDefault(liveConfig, p.ConfigPath),
+		stagingDir:  orDefault(stagingDir, p.UpdateDir),
 	}
 	r, err := buildRunner(opts)
 	if err != nil {
@@ -216,43 +217,13 @@ func buildProdRunner(o bootstrapOptions) (runner, error) {
 }
 
 // ---- path defaults (install-determined; overridable via flags) ----------------
+//
+// The per-OS default layout lives in internal/agent/paths (S1-T20); orDefault just
+// applies a default when a flag is empty.
 
 func orDefault(v, def string) string {
 	if v == "" {
 		return def
 	}
 	return v
-}
-
-func defaultBaseDir() string {
-	if runtime.GOOS == "windows" {
-		pd := os.Getenv("ProgramData")
-		if pd == "" {
-			pd = `C:\ProgramData`
-		}
-		return filepath.Join(pd, "BeyzBackup")
-	}
-	return "/var/lib/beyz-backup"
-}
-
-func defaultConfigPath() string {
-	if runtime.GOOS == "windows" {
-		return filepath.Join(defaultBaseDir(), "config.yaml")
-	}
-	return "/etc/beyz-backup/config.yaml"
-}
-
-func defaultStateDir() string { return filepath.Join(defaultBaseDir(), "state") }
-
-func defaultStagingDir() string { return filepath.Join(defaultBaseDir(), "update") }
-
-func defaultLiveBinary() string {
-	if runtime.GOOS == "windows" {
-		pf := os.Getenv("ProgramFiles")
-		if pf == "" {
-			pf = `C:\Program Files`
-		}
-		return filepath.Join(pf, "BeyzBackup", agentBinaryName+".exe")
-	}
-	return "/usr/local/bin/" + agentBinaryName
 }

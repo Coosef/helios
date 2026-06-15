@@ -1,0 +1,59 @@
+# Beyz Backup endpoint agent (S1-T20, Linux systemd preparation).
+#
+# Manual install (Sprint-1 prep; no Debian/RPM packaging yet):
+#   install -m0755 beyz-backup-agent /usr/local/bin/
+#   install -m0644 beyz-backup-agent.service /etc/systemd/system/
+#   install -D -m0644 config.yaml /etc/beyz-backup/config.yaml
+#   systemctl daemon-reload && systemctl enable --now beyz-backup-agent.service
+#
+# systemd creates and owns the runtime directories via the *Directory= directives
+# below, so no tmpfiles.d / sysusers.d is required. The agent runs as root in
+# Sprint 1 (a dedicated system user is a Sprint-8 hardening). The enrollment token
+# is supplied out-of-band via the one-shot state/enroll-token file or the
+# BEYZ_ENROLLMENT_TOKEN environment variable — never in this unit.
+[Unit]
+Description=Beyz Backup endpoint agent
+Documentation=https://github.com/Coosef/helios
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStart=/usr/local/bin/beyz-backup-agent --foreground --config /etc/beyz-backup/config.yaml
+WorkingDirectory=/var/lib/beyz-backup
+Restart=on-failure
+RestartSec=5
+
+# Terminal credential/version outcomes must NOT trigger an auto-restart loop
+# (FI-T18-1): exit 10 = re-enrollment required (401), exit 11 = protocol upgrade
+# required (426). These are the agent's distinct terminal exit codes.
+RestartPreventExitStatus=10 11
+
+# systemd-managed, correctly-owned runtime directories (no tmpfiles.d needed):
+#   /etc/beyz-backup (config), /var/lib/beyz-backup (state, root-only), /var/log/beyz-backup
+ConfigurationDirectory=beyz-backup
+StateDirectory=beyz-backup
+StateDirectoryMode=0700
+LogsDirectory=beyz-backup
+
+# Optional non-secret environment overrides (BEYZ_* tuning). The leading '-' makes
+# it optional. The enrollment token does NOT belong here.
+EnvironmentFile=-/etc/beyz-backup/agent.env
+
+# Conservative, Go-safe sandboxing (systemd-analyze verify clean). Aggressive
+# filters (SystemCallFilter, MemoryDenyWriteExecute) are deferred to Sprint-8
+# hardening so they can be validated on a real boot first.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

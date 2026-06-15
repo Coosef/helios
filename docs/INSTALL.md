@@ -98,9 +98,55 @@ wired and invocable with a certificate supplied via environment, but no producti
 certificate ships in Sprint 1. Authenticode provenance is **separate** from the Ed25519 update-trust
 root ([DR-03](design/DR-03-update-trust-and-rotation.md), `docs/sprint-1/08-SIGNING.md`).
 
-## Linux (preparation only)
+## Linux (systemd preparation)
 
-The agent and updater cross-compile for `linux/amd64` and `linux/arm64`. A systemd unit and the
-`/etc/beyz-backup` · `/var/lib/beyz-backup` · `/var/log/beyz-backup` path layout are **prepared**
-(S1-T20) but Linux is not a Sprint-1 install target; on non-Windows the secret protector currently
-fails closed (no plaintext secrets) pending the Sprint-8 TPM/keyring protector.
+The agent and updater cross-compile for `linux/amd64` and `linux/arm64`, and a systemd unit set is
+**prepared** in [`build/linux/`](../build/linux/) (S1-T20). Linux is **not a Sprint-1 production
+install target**: on non-Windows the secret protector **fails closed** (no plaintext secrets), so a
+Linux agent cannot persist its session token and therefore cannot complete enrollment until the
+Sprint-8 TPM/keyring protector lands. The unit set is provided so the layout, service semantics, and
+restart policy are frozen now.
+
+### Layout
+
+| Purpose | Path |
+|---|---|
+| config | `/etc/beyz-backup/config.yaml` (`ConfigurationDirectory`) |
+| state | `/var/lib/beyz-backup/state` (`StateDirectory`, `0700`, root-only) |
+| update staging | `/var/lib/beyz-backup/update` |
+| logs | `/var/log/beyz-backup` (`LogsDirectory`) |
+| one-shot token | `/var/lib/beyz-backup/state/enroll-token` |
+| binaries | `/usr/local/bin/beyz-backup-{agent,updater}` |
+
+systemd creates and owns the runtime directories via the `*Directory=` directives — **no
+`tmpfiles.d`/`sysusers.d` is required**, and the agent runs as **root** (a dedicated system user is a
+Sprint-8 hardening).
+
+### Manual install (no Debian/RPM packaging in Sprint 1)
+
+```sh
+install -m0755 beyz-backup-agent beyz-backup-updater /usr/local/bin/
+install -m0644 build/linux/beyz-backup-agent.service /etc/systemd/system/
+install -m0644 build/linux/beyz-backup-updater.service build/linux/beyz-backup-updater.timer /etc/systemd/system/
+install -D -m0644 config.yaml /etc/beyz-backup/config.yaml
+systemctl daemon-reload
+systemctl enable --now beyz-backup-agent.service          # starts the agent
+# OPTIONAL — only if periodic update checks are wanted (ships disabled, mirrors Windows):
+# systemctl enable --now beyz-backup-updater.timer
+```
+
+### Service semantics
+
+- The agent unit is **`Type=notify`** — the agent sends `sd_notify(READY=1)` once initialized (a
+  minimal stdlib helper, Linux-only). `ExecStart` runs the agent with `--foreground` so it is
+  unambiguously systemd's main process; a `systemctl stop` (SIGTERM) triggers a graceful shutdown.
+- **`Restart=on-failure`** with **`RestartPreventExitStatus=10 11`**: exit `10` (re-enrollment
+  required / 401) and exit `11` (protocol upgrade required / 426) are terminal and must **not** be
+  auto-restarted.
+- The **updater** is a `Type=oneshot` service triggered by `beyz-backup-updater.timer`; the timer
+  ships **disabled** (operator opt-in), mirroring the Windows on-demand model.
+- The enrollment token is supplied via the one-shot `state/enroll-token` file or
+  `BEYZ_ENROLLMENT_TOKEN` — **never** placed in the unit file.
+
+Lint the units with `task lint:systemd` (`systemd-analyze verify`; the Go static test in
+`test/systemd` is the always-on gate).

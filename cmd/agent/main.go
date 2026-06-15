@@ -14,10 +14,9 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
-	"runtime"
 
 	"github.com/beyzbackup/beyz-backup/internal/agent/app"
+	"github.com/beyzbackup/beyz-backup/internal/agent/paths"
 	"github.com/beyzbackup/beyz-backup/internal/agent/service"
 	"github.com/beyzbackup/beyz-backup/internal/agent/trustpins"
 	"github.com/beyzbackup/beyz-backup/internal/buildinfo"
@@ -69,12 +68,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 // serve builds the app + service and runs it, mapping the terminal outcome to an
 // exit code. Startup failures print only the typed error (never config/secrets).
 func serve(configPath string, foreground bool, stderr io.Writer) int {
+	p := paths.Default()
 	if configPath == "" {
-		configPath = defaultConfigPath()
+		configPath = p.ConfigPath
 	}
 	a, err := app.New(app.Options{
 		ConfigPath:    configPath,
-		StateDir:      defaultStateDir(),
+		StateDir:      p.StateDir,
 		BootstrapPins: trustpins.Bootstrap(),
 	})
 	if err != nil {
@@ -87,8 +87,9 @@ func serve(configPath string, foreground bool, stderr io.Writer) int {
 		Description: serviceDescription,
 		Runnable:    a,
 		Log:         a.Logger(),
-		LockPath:    defaultLockPath(),
+		LockPath:    p.LockPath,
 		Arguments:   []string{"--config", configPath},
+		Foreground:  foreground,  // forced foreground under the systemd unit (--foreground)
 		ExitFunc:    exitCodeFor, // watchdog last-resort exit uses the mapped code
 	})
 	if serr != nil {
@@ -96,7 +97,6 @@ func serve(configPath string, foreground bool, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%s: service init: %v\n", binaryName, serr)
 		return exitError
 	}
-	_ = foreground // kardianos auto-detects console vs service; the flag is an explicit hint
 	return exitCodeFor(svc.Run())
 }
 
@@ -111,7 +111,7 @@ func control(verb, configPath string, stdout, stderr io.Writer) int {
 		return exitError
 	}
 	if configPath == "" {
-		configPath = defaultConfigPath()
+		configPath = paths.Default().ConfigPath
 	}
 	svc, err := service.New(service.Config{
 		Name:        serviceName,
@@ -153,27 +153,3 @@ type noopRunnable struct{}
 
 func (noopRunnable) Run(ctx context.Context) error { <-ctx.Done(); return ctx.Err() }
 func (noopRunnable) Close() error                  { return nil }
-
-// ---- per-OS default paths (minimal; generalized in S1-T20) ------------------
-
-func defaultBaseDir() string {
-	if runtime.GOOS == "windows" {
-		pd := os.Getenv("ProgramData")
-		if pd == "" {
-			pd = `C:\ProgramData`
-		}
-		return filepath.Join(pd, "BeyzBackup")
-	}
-	return "/var/lib/beyz-backup"
-}
-
-func defaultConfigPath() string {
-	if runtime.GOOS == "windows" {
-		return filepath.Join(defaultBaseDir(), "config.yaml")
-	}
-	return "/etc/beyz-backup/config.yaml"
-}
-
-func defaultStateDir() string { return filepath.Join(defaultBaseDir(), "state") }
-
-func defaultLockPath() string { return filepath.Join(defaultStateDir(), "agent.lock") }
