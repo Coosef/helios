@@ -192,3 +192,38 @@ jobs:
           go-version-file: go.mod
           cache: true
       - run: go test ./...
+
+  installer-build:
+    runs-on: windows-latest
+    # NON-BLOCKING (informational): compiles the S1-T29 Inno Setup artifact. Inno
+    # Setup is Windows-only, so the .iss CONTENT is validated by the Go tests in
+    # installer/ on every runner; this job additionally produces the setup .exe.
+    # The artifact is UNSIGNED (Authenticode = S1-T30). It becomes a required gate
+    # only after the S1-T35 Pester suite validates the produced installer
+    # end-to-end (T35 is NOT required yet).
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: build windows/amd64 binaries
+        env:
+          GOOS: windows
+          GOARCH: amd64
+          CGO_ENABLED: "0"
+        run: |
+          go build -o dist/windows/beyz-backup-agent.exe ./cmd/agent
+          go build -o dist/windows/beyz-backup-updater.exe ./cmd/updater
+      - name: install Inno Setup (pinned)
+        run: choco install innosetup --version=6.2.2 --no-progress -y
+      - name: compile installer (ISCC)
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DBinDir=dist\windows installer\beyz-backup.iss
+      - name: upload setup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BeyzBackupSetup
+          path: installer/Output/*.exe
+          if-no-files-found: error
