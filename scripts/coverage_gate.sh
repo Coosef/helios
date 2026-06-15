@@ -6,8 +6,9 @@
 #     pkg/proto and the thin cmd/* entrypoints are NOT unit-tested logic and are
 #     excluded — they are exercised by integration/T34).
 #   - Security-critical packages >= 85% (the enforced set below).
-#   - Two AC-38 security packages are DEFERRED (printed, not gated) for a tracked,
-#     legitimate reason (freeze #9): integration-only or OS-specific execution.
+#   - The DEFERRED list is now EMPTY: S1-T33 added unit tests that lifted
+#     internal/agent/enroll and internal/agent/state to >=85% on the Linux gate, so
+#     both were promoted into the enforced set. The mechanism is kept for future use.
 #
 # Run from the repo root:  ./scripts/coverage_gate.sh
 set -euo pipefail
@@ -24,18 +25,15 @@ ENFORCED=(
   internal/agent/audit           # hash-chained audit
   internal/updater/trust         # update trust root
   internal/updater/manifestcheck # anti-rollback decision
+  internal/agent/enroll          # enrollment use-case (S1-T33 lifted to >=85% Linux unit)
+  internal/agent/state           # protected state store (S1-T33 lifted to >=85% Linux unit)
 )
 
-# Deferred security packages (below SECURITY_MIN for a documented reason; NOT gated
-# here — coverage is completed by the named follow-up).
-#   internal/agent/enroll : the full enroll<->mock exchange is covered by the T34
-#                           integration suite (AC-14); unit logic is ~81%.
-#   internal/agent/state  : the Windows DPAPI protector is OS-specific and runs on
-#                           the windows-test job; the Linux build omits it (~84%).
-DEFERRED=(
-  internal/agent/enroll
-  internal/agent/state
-)
+# Deferred security packages: NONE. S1-T33 promoted internal/agent/enroll and
+# internal/agent/state into ENFORCED above (both now >=85% on the Linux gate via
+# unit tests). The array + loop are kept so a future package can be parked here with
+# a documented rationale.
+DEFERRED=()
 
 pkg_cov() { # prints the integer-ish coverage % for a package, or "0.0" if no tests
   go test -cover "./$1" 2>/dev/null | grep -oE 'coverage: [0-9.]+%' | grep -oE '[0-9.]+' | head -1 || echo "0.0"
@@ -62,12 +60,14 @@ for p in "${ENFORCED[@]}"; do
   printf "    %-32s %6s%%  [%s]\n" "$p" "$c" "$s"
 done
 
-# --- deferred security packages (informational) ---
-echo "  -- security-critical (deferred; see scripts/coverage_gate.sh) --"
-for p in "${DEFERRED[@]}"; do
-  c="$(pkg_cov "$p")"
-  printf "    %-32s %6s%%  [DEFERRED < %s%%]\n" "$p" "$c" "$SECURITY_MIN"
-done
+# --- deferred security packages (informational; empty after S1-T33) ---
+if [ "${#DEFERRED[@]}" -gt 0 ]; then
+  echo "  -- security-critical (deferred; see scripts/coverage_gate.sh) --"
+  for p in "${DEFERRED[@]}"; do
+    c="$(pkg_cov "$p")"
+    printf "    %-32s %6s%%  [DEFERRED < %s%%]\n" "$p" "$c" "$SECURITY_MIN"
+  done
+fi
 
 if [ "$fail" -ne 0 ]; then
   echo "== coverage gate FAILED =="
