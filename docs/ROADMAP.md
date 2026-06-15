@@ -4,17 +4,26 @@
 
 Agent Foundation
 
-Status: Planned
+Status: Complete (P0)
 
-Goals:
+Delivered:
 
-* Windows Service
-* Config Management
-* Logging
-* Enrollment
-* Heartbeat
-* Updater Skeleton
-* Installer
+* Windows Service (single `BeyzBackupAgent`, LocalSystem, SCM lifecycle + recovery)
+* Config Management (YAML + JSON-Schema validation, env/flag precedence, secrets structurally absent)
+* Structured Logging (zerolog JSON, rotation, redaction) + tamper-evident BLAKE3 audit chain
+* Protected State Store (bbolt + DPAPI value-wrapping + ACL-locked folders + write-once device GUID)
+* Identity & Enrollment (ECDSA P-256 + CSR + SPKI fingerprint; one-shot enrollment token)
+* Heartbeat & Task-Poll (server-directed jittered cadence; forward-compatible envelopes)
+* Hardened Transport (TLS 1.2+/1.3, mandatory SPKI pinning, backoff+jitter)
+* Real Updater (enforcing Ed25519 manifest verify + BLAKE3/SHA256 + anti-rollback → stage → atomic
+  swap → 90s health-gate → integrity-checked rollback; on-demand binary)
+* Inno Setup Installer (dual-binary, ACL-hardened, single service; signing-ready)
+* CI Security Gates (vet/lint/race/contract/drift/gitleaks/govulncheck + coverage gate + theme-G
+  negative suite)
+
+> Note: the **real, enforcing** signed-update verification and the **audit foundation** shipped in
+> Sprint 1 (not Sprint 8). Sprint 8 adds only the deferred pieces — the persistent updater watchdog,
+> two-stage self-update bootstrap, and off-device WORM audit anchoring.
 
 ---
 
