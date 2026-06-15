@@ -41,3 +41,6 @@ secrets.*
 
 # stray go build artifacts (binaries built into repo root)
 /mkfixtures
+
+# generated Windows version-info resources (S1-T30; never committed)
+*.syso

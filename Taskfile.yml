@@ -9,17 +9,25 @@ vars:
   PKG_BUILDINFO: '{{.MODULE}}/internal/buildinfo'
   BIN_DIR: dist
   EXE: '{{if eq OS "windows"}}.exe{{end}}'
+  # Single version source (S1-T30): the repo-root VERSION file. Shared by the Go
+  # ldflags, the Windows version-info resource, the Inno AppVersion, and the
+  # artifact names (a static test asserts they never drift).
   VERSION:
-    sh: git describe --tags --always --dirty 2>/dev/null || echo "0.0.0-dev"
+    sh: tr -d '[:space:]' < VERSION 2>/dev/null || echo "0.0.0-dev"
   COMMIT:
     sh: git rev-parse --short HEAD 2>/dev/null || echo "unknown"
   DATE:
     sh: date -u +%Y-%m-%dT%H:%M:%SZ
+  # Release channel: "dev" by default; override e.g. `task dist CHANNEL=stable`.
+  CHANNEL: dev
+  # Pinned Windows version-info generator (run-on-demand; never committed .syso).
+  GOVERSIONINFO: github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.4.1
   LDFLAGS: >-
     -s -w
     -X {{.PKG_BUILDINFO}}.Version={{.VERSION}}
     -X {{.PKG_BUILDINFO}}.Commit={{.COMMIT}}
     -X {{.PKG_BUILDINFO}}.Date={{.DATE}}
+    -X {{.PKG_BUILDINFO}}.Channel={{.CHANNEL}}
 
 tasks:
   default:
@@ -166,20 +174,43 @@ tasks:
         sleep 3
         uvx schemathesis run --url http://127.0.0.1:4010 --checks all api/openapi.yaml
 
-  cross:
-    desc: '[S1-T20/T30] Cross-compile windows/amd64 + linux/amd64,arm64'
+  gen:versioninfo:
+    desc: '[S1-T30] Generate Windows version-info .syso for agent + updater (gitignored)'
+    vars:
+      VMAJ:
+        sh: cut -d. -f1 < VERSION | tr -d '[:space:]'
+      VMIN:
+        sh: cut -d. -f2 < VERSION | tr -d '[:space:]'
+      VPAT:
+        sh: cut -d. -f3 < VERSION | tr -d '[:space:]'
     cmds:
-      - echo "cross is implemented in S1-T20/S1-T30"
+      - go run {{.GOVERSIONINFO}} -64 -ver-major={{.VMAJ}} -ver-minor={{.VMIN}} -ver-patch={{.VPAT}} -ver-build=0 -file-version="{{.VERSION}}.0" -product-version="{{.VERSION}}.0" -o cmd/agent/resource_windows_amd64.syso build/windows/versioninfo.agent.json
+      - go run {{.GOVERSIONINFO}} -64 -ver-major={{.VMAJ}} -ver-minor={{.VMIN}} -ver-patch={{.VPAT}} -ver-build=0 -file-version="{{.VERSION}}.0" -product-version="{{.VERSION}}.0" -o cmd/updater/resource_windows_amd64.syso build/windows/versioninfo.updater.json
 
-  dist:
-    desc: '[S1-T30] Produce signed distributable artifacts'
+  cross:
+    desc: '[S1-T30] Cross-compile versioned binaries (windows/amd64 + linux/amd64,arm64)'
+    deps: [gen:versioninfo]
     cmds:
-      - echo "dist is implemented in S1-T30"
+      - GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "{{.LDFLAGS}}" -o {{.BIN_DIR}}/windows/beyz-backup-agent.exe ./cmd/agent
+      - GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "{{.LDFLAGS}}" -o {{.BIN_DIR}}/windows/beyz-backup-updater.exe ./cmd/updater
+      - GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "{{.LDFLAGS}}" -o {{.BIN_DIR}}/linux-amd64/beyz-backup-agent ./cmd/agent
+      - GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "{{.LDFLAGS}}" -o {{.BIN_DIR}}/linux-amd64/beyz-backup-updater ./cmd/updater
+      - GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags "{{.LDFLAGS}}" -o {{.BIN_DIR}}/linux-arm64/beyz-backup-agent ./cmd/agent
+      - GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags "{{.LDFLAGS}}" -o {{.BIN_DIR}}/linux-arm64/beyz-backup-updater ./cmd/updater
 
   installer:
-    desc: '[S1-T29] Build the Inno Setup installer'
+    desc: '[S1-T29/T30] Build the Inno Setup installer (Windows; ISCC + version unification)'
+    deps: [cross]
     cmds:
-      - echo "installer is implemented in S1-T29"
+      # ISCC (Inno Setup compiler) is Windows-only; /DAppVersion unifies the version.
+      - 'command -v ISCC >/dev/null 2>&1 && ISCC /DBinDir={{.BIN_DIR}}/windows /DAppVersion={{.VERSION}} installer/beyz-backup.iss || echo "installer: Inno Setup (ISCC) is Windows-only; produced by the CI installer-build job"'
+
+  dist:
+    desc: '[S1-T30] Produce distributable artifacts (binaries + SHA256SUMS). Authenticode signing + the installer are Windows/CI steps.'
+    deps: [cross]
+    cmds:
+      - 'cd {{.BIN_DIR}} && shasum -a 256 windows/* linux-amd64/* linux-arm64/* > SHA256SUMS'
+      - 'echo "dist: version {{.VERSION}} channel {{.CHANNEL}} -> {{.BIN_DIR}}/{windows,linux-amd64,linux-arm64}/* + SHA256SUMS (UNSIGNED). Authenticode signing (installer/scripts/sign.ps1) + the installer run on Windows / the CI sign-smoke job."'
 
   clean:
     desc: Remove build and coverage output

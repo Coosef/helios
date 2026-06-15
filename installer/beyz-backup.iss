@@ -25,7 +25,12 @@
 
 #define AppName        "Beyz Backup Agent"
 #define AppPublisher   "Beyz System A.S."
-#define AppVersion     "0.1.0"
+; Version unification (S1-T30): driven by the repo-root VERSION file via
+;   ISCC.exe /DAppVersion=<version> ...   (the literal below is only the fallback
+; for a direct ISCC invocation). Keep BeyzBackupSetup-<version>.exe naming (T35).
+#ifndef AppVersion
+  #define AppVersion "0.1.0"
+#endif
 #define AgentExe       "beyz-backup-agent.exe"
 #define UpdaterExe     "beyz-backup-updater.exe"
 #define ServiceName    "BeyzBackupAgent"

@@ -208,19 +208,25 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: build windows/amd64 binaries
-        env:
-          GOOS: windows
-          GOARCH: amd64
-          CGO_ENABLED: "0"
+      - name: build version-info + version-stamped binaries
+        shell: pwsh
         run: |
-          go build -o dist/windows/beyz-backup-agent.exe ./cmd/agent
-          go build -o dist/windows/beyz-backup-updater.exe ./cmd/updater
+          $v = (Get-Content VERSION -Raw).Trim()
+          $p = $v.Split('.')
+          $gvi = 'github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.4.1'
+          go run $gvi -64 -ver-major=$($p[0]) -ver-minor=$($p[1]) -ver-patch=$($p[2]) -ver-build=0 -file-version="$v.0" -product-version="$v.0" -o cmd/agent/resource_windows_amd64.syso build/windows/versioninfo.agent.json
+          go run $gvi -64 -ver-major=$($p[0]) -ver-minor=$($p[1]) -ver-patch=$($p[2]) -ver-build=0 -file-version="$v.0" -product-version="$v.0" -o cmd/updater/resource_windows_amd64.syso build/windows/versioninfo.updater.json
+          $ld = "-s -w -X github.com/beyzbackup/beyz-backup/internal/buildinfo.Version=$v -X github.com/beyzbackup/beyz-backup/internal/buildinfo.Channel=dev"
+          $env:GOOS = 'windows'; $env:GOARCH = 'amd64'; $env:CGO_ENABLED = '0'
+          go build -trimpath -ldflags $ld -o dist/windows/beyz-backup-agent.exe ./cmd/agent
+          go build -trimpath -ldflags $ld -o dist/windows/beyz-backup-updater.exe ./cmd/updater
       - name: install Inno Setup (pinned)
         run: choco install innosetup --version=6.2.2 --no-progress -y
       - name: compile installer (ISCC)
+        shell: pwsh
         run: |
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DBinDir=dist\windows installer\beyz-backup.iss
+          $v = (Get-Content VERSION -Raw).Trim()
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DBinDir=dist\windows /DAppVersion=$v installer\beyz-backup.iss
       - name: upload setup artifact
         uses: actions/upload-artifact@v4
         with:
@@ -261,8 +267,9 @@ jobs:
         shell: pwsh
         run: |
           if (-not (Get-ChildItem installer/Output/BeyzBackupSetup-*.exe -ErrorAction SilentlyContinue)) {
+            $v = (Get-Content VERSION -Raw).Trim()
             choco install innosetup --version=6.2.2 --no-progress -y
-            & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DBinDir=dist\windows installer\beyz-backup.iss
+            & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DBinDir=dist\windows /DAppVersion=$v installer\beyz-backup.iss
           }
       - name: install Pester (pinned)
         shell: pwsh
@@ -278,3 +285,38 @@ jobs:
           $cfg.Run.Exit = $true
           $cfg.Output.Verbosity = 'Detailed'
           Invoke-Pester -Configuration $cfg
+
+  sign-smoke:
+    runs-on: windows-latest
+    # NON-BLOCKING (informational): proves the S1-T30 version-info + Authenticode
+    # signing pipeline end-to-end with an EPHEMERAL self-signed certificate. It
+    # uses NO real certificate and NO repository/CI secret, so it is safe on PR CI
+    # (incl. fork PRs). The REAL-cert path (a protected-environment secret) is the
+    # SAME installer/scripts/sign.ps1 code and is a release-time step, NOT wired
+    # here (no production signing secret / no release publishing in Sprint 1).
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: build version-info + version-stamped binaries and installer
+        shell: pwsh
+        run: |
+          $v = (Get-Content VERSION -Raw).Trim()
+          $p = $v.Split('.')
+          $gvi = 'github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.4.1'
+          go run $gvi -64 -ver-major=$($p[0]) -ver-minor=$($p[1]) -ver-patch=$($p[2]) -ver-build=0 -file-version="$v.0" -product-version="$v.0" -o cmd/agent/resource_windows_amd64.syso build/windows/versioninfo.agent.json
+          go run $gvi -64 -ver-major=$($p[0]) -ver-minor=$($p[1]) -ver-patch=$($p[2]) -ver-build=0 -file-version="$v.0" -product-version="$v.0" -o cmd/updater/resource_windows_amd64.syso build/windows/versioninfo.updater.json
+          $ld = "-s -w -X github.com/beyzbackup/beyz-backup/internal/buildinfo.Version=$v -X github.com/beyzbackup/beyz-backup/internal/buildinfo.Channel=dev"
+          $env:GOOS = 'windows'; $env:GOARCH = 'amd64'; $env:CGO_ENABLED = '0'
+          go build -trimpath -ldflags $ld -o dist/windows/beyz-backup-agent.exe ./cmd/agent
+          go build -trimpath -ldflags $ld -o dist/windows/beyz-backup-updater.exe ./cmd/updater
+          choco install innosetup --version=6.2.2 --no-progress -y
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DBinDir=dist\windows /DAppVersion=$v installer\beyz-backup.iss
+      - name: self-signed sign + verify smoke (no secret)
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem installer/Output/BeyzBackupSetup-*.exe | Select-Object -First 1).FullName
+          ./build/windows/sign-smoke.ps1 -Path @('dist/windows/beyz-backup-agent.exe', 'dist/windows/beyz-backup-updater.exe', $setup)
