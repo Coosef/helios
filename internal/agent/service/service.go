@@ -80,6 +80,11 @@ type Config struct {
 	LockPath string
 	// Arguments are recorded in the installed service's run command.
 	Arguments []string
+	// Foreground forces the direct foreground run path (signal-cancelled context +
+	// sd_notify) instead of relying on kardianos's service-manager auto-detection.
+	// The Linux systemd unit sets it (ExecStart --foreground) so the agent is
+	// unambiguously systemd's main process; it has no effect on the Windows SCM path.
+	Foreground bool
 	// ExitFunc maps a terminal workload error to a process exit code. It is used
 	// ONLY by the service-mode watchdog's last-resort exit; nil falls back to a
 	// generic non-zero code.
@@ -90,9 +95,10 @@ type Config struct {
 
 // Service is the OS-service lifecycle adapter.
 type Service struct {
-	prog     *program
-	ksvc     kservice.Service
-	lockPath string
+	prog       *program
+	ksvc       kservice.Service
+	lockPath   string
+	foreground bool
 }
 
 // New builds the adapter over kardianos/service. UserName is left empty so the
@@ -121,7 +127,7 @@ func New(cfg Config) (*Service, error) {
 	if err != nil {
 		return nil, fmt.Errorf("service: build: %w", err)
 	}
-	return &Service{prog: prog, ksvc: ksvc, lockPath: cfg.LockPath}, nil
+	return &Service{prog: prog, ksvc: ksvc, lockPath: cfg.LockPath, foreground: cfg.Foreground}, nil
 }
 
 // Run acquires the single-instance lock and runs the service, returning the
@@ -143,7 +149,7 @@ func (s *Service) Run() error {
 		}
 		defer func() { _ = lock.release() }()
 	}
-	if Interactive() {
+	if s.foreground || Interactive() {
 		return s.runForeground()
 	}
 	if err := s.ksvc.Run(); err != nil {
@@ -158,6 +164,10 @@ func (s *Service) Run() error {
 func (s *Service) runForeground() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// Tell systemd we are up (Type=notify); no-op outside systemd / off Linux. The
+	// app is already fully initialized by the time Run() is reached (config loaded,
+	// state opened, transport built), so READY=1 here is a truthful readiness signal.
+	notifyReady()
 	return s.runWith(ctx)
 }
 

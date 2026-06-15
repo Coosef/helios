@@ -99,6 +99,25 @@ tasks:
     cmds:
       - golangci-lint run ./...
 
+  lint:systemd:
+    desc: '[S1-T20] Lint the Linux systemd units (systemd-analyze verify; optional/non-blocking)'
+    cmds:
+      # The always-on gate is the Go static unit test (test/systemd); this is the
+      # optional Linux-only lint. Warnings about a missing ExecStart binary are
+      # expected when the agent is not installed on the linter host, so verify
+      # failures are reported, not fatal.
+      - |
+        if command -v systemd-analyze >/dev/null 2>&1; then
+          systemd-analyze verify \
+            build/linux/beyz-backup-agent.service \
+            build/linux/beyz-backup-updater.service \
+            build/linux/beyz-backup-updater.timer \
+            && echo "systemd units verified" \
+            || echo "systemd-analyze reported warnings (often a not-yet-installed ExecStart binary); review above"
+        else
+          echo "systemd-analyze not available on this host; skipping (test/systemd is the always-on gate)"
+        fi
+
   tidy:
     desc: Tidy go.mod / go.sum
     cmds:

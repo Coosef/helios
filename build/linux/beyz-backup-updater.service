@@ -1,0 +1,41 @@
+# Beyz Backup on-demand updater (S1-T20). Mirrors the Windows model (§0.6, AC-42):
+# the updater is an ON-DEMAND oneshot that runs the update FSM to completion and
+# EXITS — it is NOT a persistent service. It is triggered by beyz-backup-updater.timer
+# (or manually); the timer ships DISABLED by default and is operator-opt-in, mirroring
+# the deferred Windows scheduled task (FI-T29-1).
+#
+# Manual install:
+#   install -m0755 beyz-backup-updater /usr/local/bin/
+#   install -m0644 beyz-backup-updater.service beyz-backup-updater.timer /etc/systemd/system/
+#   # enable ONLY when update polling is desired:
+#   systemctl enable --now beyz-backup-updater.timer
+[Unit]
+Description=Beyz Backup on-demand updater (check + apply)
+Documentation=https://github.com/Coosef/helios
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/beyz-backup-updater apply
+WorkingDirectory=/var/lib/beyz-backup
+
+# Shares the agent's runtime directories (created by the agent unit / install).
+StateDirectory=beyz-backup
+StateDirectoryMode=0700
+ConfigurationDirectory=beyz-backup
+
+# Same conservative sandboxing as the agent unit.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+# No [Install]: this oneshot is started by the .timer, not enabled directly.

@@ -1,0 +1,17 @@
+# Periodic trigger for the on-demand updater (S1-T20). Ships DISABLED by default —
+# enabling it is an explicit operator action (systemctl enable --now
+# beyz-backup-updater.timer), mirroring the deferred Windows scheduled task
+# (FI-T29-1). Until enabled, no automatic update checks run.
+[Unit]
+Description=Periodic Beyz Backup update check
+Documentation=https://github.com/Coosef/helios
+
+[Timer]
+# Daily, with a randomized delay so a fleet does not stampede the control plane.
+OnCalendar=daily
+RandomizedDelaySec=3600
+Persistent=true
+Unit=beyz-backup-updater.service
+
+[Install]
+WantedBy=timers.target
