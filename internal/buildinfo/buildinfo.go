@@ -18,12 +18,19 @@ import (
 //	  -X github.com/beyzbackup/beyz-backup/internal/buildinfo.Commit=abc1234 \
 //	  -X github.com/beyzbackup/beyz-backup/internal/buildinfo.Date=2026-06-08T00:00:00Z"
 var (
-	// Version is the semantic version of the binary (e.g. "1.4.0").
+	// Version is the semantic version of the binary (e.g. "1.4.0"). It is sourced
+	// from the repo-root VERSION file at build time — the single version source
+	// shared with the Windows version-info resource, the Inno AppVersion, and the
+	// artifact names (S1-T30).
 	Version = "0.0.0-dev"
 	// Commit is the source revision the binary was built from.
 	Commit = "unknown"
 	// Date is the UTC build timestamp in RFC 3339 form.
 	Date = "unknown"
+	// Channel is the release channel the binary was built for: "dev" for local /
+	// PR builds, "stable"/"beta"/"canary" for releases. Injected via -ldflags;
+	// never a secret.
+	Channel = "dev"
 )
 
 // Info is an immutable snapshot of build metadata for a named binary.
@@ -32,6 +39,7 @@ type Info struct {
 	Version   string
 	Commit    string
 	Date      string
+	Channel   string
 	GoVersion string
 	Platform  string
 }
@@ -43,6 +51,7 @@ func Get(name string) Info {
 		Version:   Version,
 		Commit:    Commit,
 		Date:      Date,
+		Channel:   Channel,
 		GoVersion: runtime.Version(),
 		Platform:  runtime.GOOS + "/" + runtime.GOARCH,
 	}
@@ -50,6 +59,6 @@ func Get(name string) Info {
 
 // String renders a single-line, human-readable build identifier.
 func (i Info) String() string {
-	return fmt.Sprintf("%s %s (commit %s, built %s, %s, %s)",
-		i.Name, i.Version, i.Commit, i.Date, i.GoVersion, i.Platform)
+	return fmt.Sprintf("%s %s (channel %s, commit %s, built %s, %s, %s)",
+		i.Name, i.Version, i.Channel, i.Commit, i.Date, i.GoVersion, i.Platform)
 }
