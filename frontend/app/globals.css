@@ -23,3 +23,16 @@
 
 .page-pad { padding: var(--pad); }
 .grid-auto { display: grid; gap: var(--gap); }
+
+/* Responsive dashboard layout helpers (UI-S1). stat-grid fills the row with equal
+   tiles that wrap; cols-2 is a wide primary + narrower secondary that stacks on small
+   screens. Section spacing for stacked blocks inside a page. */
+.stat-grid { display: grid; gap: var(--gap); grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.cols-2 { display: grid; gap: var(--gap); grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); align-items: start; }
+/* Detail layout: a fixed-ish primary panel + a wide secondary (e.g. device info + audit). */
+.cols-detail { display: grid; gap: var(--gap); grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); align-items: start; }
+.stack > * + * { margin-top: var(--gap); }
+@media (max-width: 960px) {
+  .cols-2 { grid-template-columns: 1fr; }
+  .cols-detail { grid-template-columns: 1fr; }
+}

@@ -21,6 +21,7 @@ const KEY_ROUTES = [
   "app/login/page.tsx", // login
   "app/(app)/layout.tsx", // shell
   "app/(app)/dashboard/page.tsx", // dashboard
+  "app/(app)/executive/page.tsx", // executive overview
 ];
 
 test("key route modules exist and export a default", () => {
@@ -59,4 +60,18 @@ test("no source imports runtime code from the Backup/ design package", () => {
 test("error boundaries exist (no silent blank page on a client crash)", () => {
   assert.match(read("app/error.tsx"), /export default/);
   assert.match(read("app/global-error.tsx"), /export default/);
+});
+
+test("shell wraps content in a full-width .content > .page layout (no narrow-column collapse)", () => {
+  const shell = read("components/AppShell.tsx");
+  // .content (flex/scroll) and .page must be SEPARATE elements — combining them put
+  // margin:auto on the flex child and collapsed it to content width.
+  assert.match(shell, /className="content"/, "AppShell has a .content scroll container");
+  assert.match(shell, /className="page page-wide"/, "AppShell wraps children in a full-width .page");
+  assert.doesNotMatch(shell, /className="content page"/, "must NOT combine .content and .page on one element");
+});
+
+test("dashboard + executive use the responsive grid layout helpers", () => {
+  assert.match(read("app/(app)/dashboard/page.tsx"), /stat-grid/);
+  assert.match(read("app/(app)/executive/page.tsx"), /stat-grid|cols-2/);
 });

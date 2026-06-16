@@ -20,7 +20,13 @@ export function AppShell({ children }: { children: ReactNode }) {
       <Sidebar tenants={tenants} />
       <div className="main">
         <Topbar />
-        <main className="content page">{children}</main>
+        {/* .content is the full-width flex/scroll column; .page is the inner padded
+            wrapper. They MUST be separate elements — .page has `margin: 0 auto`, and
+            on the flex child that collapses it to its content width (the narrow-column
+            bug). page-wide removes the max-width cap so dashboards use the full space. */}
+        <main className="content">
+          <div className="page page-wide">{children}</div>
+        </main>
       </div>
     </div>
   );
