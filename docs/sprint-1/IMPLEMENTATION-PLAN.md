@@ -78,16 +78,16 @@ Legend: ⬜ Pending · 🟦 In Progress · ✅ Done · ⛔ Blocked
 | S1-T26 | internal/updater/healthgate + rollback: 90s ack gate + integrity restore | updater | P0 | ✅ Done |
 | S1-T27 | internal/updater/app + cmd/updater: persisted FSM, on-demand (no service) | updater | P0 | ✅ Done |
 | S1-T28 | Prism/Schemathesis mock SaaS + update-manifest fixtures | tooling | P0 | ✅ Done |
-| S1-T29 | Inno Setup installer: dual-binary, ACL-locked, single (agent) service | installer | P0 | ⬜ Pending |
+| S1-T29 | Inno Setup installer: dual-binary, ACL-locked, single (agent) service | installer | P0 | ✅ Done |
 | S1-T31 | CI pipeline: vet/lint/gosec/gitleaks/race/drift/Inno build | tooling | P0 | ✅ Done |
-| S1-T32 | Security-controls integration + negative-test gating | shared | P0 | ⬜ Pending |
-| S1-T33 | Unit test suite for shared kernel + agent core | shared | P0 | ⬜ Pending |
+| S1-T32 | Security-controls integration + negative-test gating | shared | P0 | ✅ Done |
+| S1-T33 | Unit test suite for shared kernel + agent core | shared | P0 | ✅ Done |
 | S1-T34 | Integration tests: enroll→…→poll vs mock + updater state machine | shared | P0 | ✅ Done |
 | S1-T17 | internal/agent/license: load + verify signed license blob (advisory) | agent | P1 | ✅ Done |
 | S1-T20 | build/linux systemd unit + cross-platform path abstraction | agent | P1 | ✅ Done |
-| S1-T30 | Windows version-info/Authenticode signing hooks + Taskfile dist | tooling | P1 | ⬜ Pending |
-| S1-T35 | Windows service-lifecycle + installer Pester tests | installer | P1 | ⬜ Pending |
-| S1-T36 | Six design records (DR-01..06) + docs (README/INSTALL/ARCHITECTURE/SECURITY/ROADMAP updates) | docs | P1 | ⬜ Pending |
+| S1-T30 | Windows version-info/Authenticode signing hooks + Taskfile dist | tooling | P1 | ✅ Done |
+| S1-T35 | Windows service-lifecycle + installer Pester tests | installer | P1 | ✅ Done |
+| S1-T36 | Six design records (DR-01..06) + docs (README/INSTALL/ARCHITECTURE/SECURITY/ROADMAP updates) | docs | P1 | ✅ Done |
 
 > Source of truth for task scope is `03-TASK-BREAKDOWN.md` — **36 tasks (30 P0 · 5 P1 · 1 P2)**. This tracker now lists all 36 (a prior revision erroneously omitted S1-T06 and S1-T36 and wrongly noted "no T06"; corrected during S1-T06).
 
