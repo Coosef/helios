@@ -158,6 +158,24 @@ off-device WORM anchoring is Sprint 8. Audit always writes regardless of operati
   non-cert-bound advisory scope. Server-side RLS enforcement is Sprint 2. See
   [DR-04](design/DR-04-tenancy-and-isolation.md).
 
+## License verification (advisory, S1-T17)
+
+The server-signed license blob is verified at startup with a **real, fail-closed Ed25519**
+signature over the **RFC 8785 (JCS) canonical claims** (the token minus its `signature` field),
+against a **separate embedded license public key** — distinct from the update trust anchor, so a
+license-key compromise is not an update-key compromise (public-only in the repo, AC-35). The
+signature is the agent-side anti-tamper mechanism (LIC-5): editing any signed claim (seats, quota,
+`tenant_id`, `not_after`, …) breaks verification.
+
+In Sprint 1 the **consequences are advisory** (LIC-4): a missing, malformed, expired,
+not-yet-valid, tenant-mismatched, or signature-invalid license is recorded but **never** blocks
+startup, enrollment, heartbeat, or any operation. Expiry and tenant binding are **parsed and
+classified, not enforced**; a tampered/invalid signature emits a `license.signature_invalid`
+hash-chained audit event. Enforcement (seats, quota, expiry, revocation) lands server-side in a
+later sprint. The frozen claim set is `{schema_version, license_id, tenant_id, parent_org_id, plan,
+seats, quota_bytes, issued_at, not_before, not_after, key_id, signature}`. See
+[DR-01](design/DR-01-key-management.md) (key custody) and `internal/agent/license`.
+
 ## CI security gates (required checks)
 
 Blocking, non-bypassable merge checks on `main`: `test` (+ coverage gate, ≥85% security pkgs / ≥70%

@@ -27,6 +27,7 @@ ENFORCED=(
   internal/updater/manifestcheck # anti-rollback decision
   internal/agent/enroll          # enrollment use-case (S1-T33 lifted to >=85% Linux unit)
   internal/agent/state           # protected state store (S1-T33 lifted to >=85% Linux unit)
+  internal/agent/license         # license signature verification (S1-T17)
 )
 
 # Deferred security packages: NONE. S1-T33 promoted internal/agent/enroll and
