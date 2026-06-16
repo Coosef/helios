@@ -83,7 +83,7 @@ Legend: ⬜ Pending · 🟦 In Progress · ✅ Done · ⛔ Blocked
 | S1-T32 | Security-controls integration + negative-test gating | shared | P0 | ⬜ Pending |
 | S1-T33 | Unit test suite for shared kernel + agent core | shared | P0 | ⬜ Pending |
 | S1-T34 | Integration tests: enroll→…→poll vs mock + updater state machine | shared | P0 | ✅ Done |
-| S1-T17 | internal/agent/license: load + verify signed license blob (advisory) | agent | P1 | ⬜ Pending |
+| S1-T17 | internal/agent/license: load + verify signed license blob (advisory) | agent | P1 | ✅ Done |
 | S1-T20 | build/linux systemd unit + cross-platform path abstraction | agent | P1 | ✅ Done |
 | S1-T30 | Windows version-info/Authenticode signing hooks + Taskfile dist | tooling | P1 | ⬜ Pending |
 | S1-T35 | Windows service-lifecycle + installer Pester tests | installer | P1 | ⬜ Pending |

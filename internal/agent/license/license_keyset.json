@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "keys": [
+    {
+      "algorithm": "ed25519",
+      "key_id": "beyz-license-test-2026-01",
+      "public_key": "knMI9T1nZVA9K2TBA6tapHIGqzlQLP6PmEQv21QxALc=",
+      "revoked": false
+    }
+  ]
+}

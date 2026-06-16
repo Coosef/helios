@@ -21,12 +21,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/beyzbackup/beyz-backup/internal/agent/audit"
 	"github.com/beyzbackup/beyz-backup/internal/agent/config"
 	"github.com/beyzbackup/beyz-backup/internal/agent/enroll"
 	"github.com/beyzbackup/beyz-backup/internal/agent/heartbeat"
 	"github.com/beyzbackup/beyz-backup/internal/agent/identity"
+	"github.com/beyzbackup/beyz-backup/internal/agent/license"
 	"github.com/beyzbackup/beyz-backup/internal/agent/logging"
 	"github.com/beyzbackup/beyz-backup/internal/agent/state"
 	"github.com/beyzbackup/beyz-backup/internal/agent/tasks"
@@ -97,8 +99,9 @@ type builder interface {
 type App struct {
 	log      *logging.Logger
 	b        builder
-	stateDir string        // holds the one-shot enroll-token file (see enrolltoken.go)
-	closers  []func() error // released in reverse (LIFO) by Close
+	stateDir string          // holds the one-shot enroll-token file (see enrolltoken.go)
+	license  *license.Result // advisory license status computed at startup (S1-T17)
+	closers  []func() error  // released in reverse (LIFO) by Close
 }
 
 // New builds and connects all collaborators, seeds the in-memory session token
@@ -163,13 +166,23 @@ func New(opts Options) (*App, error) {
 		client.SetSessionToken(string(tok))
 	}
 
-	return &App{
+	pb := &prodBuilder{cfg: cfg, log: log, store: store, idm: idm, client: client, stateDir: opts.StateDir}
+	app := &App{
 		log:      log,
-		b:        &prodBuilder{cfg: cfg, log: log, store: store, idm: idm, client: client, stateDir: opts.StateDir},
+		b:        pb,
 		stateDir: opts.StateDir,
 		closers:  closers,
-	}, nil
+	}
+	// 7. Advisory license load + verify (S1-T17). The Ed25519 verification is real and
+	//    fail-closed; the OUTCOME is advisory (LIC-4) — it never blocks startup and
+	//    never gates any agent operation. A missing blob (the Sprint-1 default) is fine.
+	app.license = pb.loadLicenseAdvisory()
+	return app, nil
 }
+
+// License returns the advisory license status computed at startup (S1-T17). It is
+// informational — no agent behavior is gated on it in Sprint 1. Never nil after New.
+func (a *App) License() *license.Result { return a.license }
 
 // Run ensures enrollment, then runs the heartbeat and task-poll loops until a
 // terminal error (401 → ErrEnrollmentRequired, 426 → ErrUpgradeRequired) or
@@ -499,4 +512,73 @@ func (pb *prodBuilder) getPlain(key string) string {
 		return string(v)
 	}
 	return ""
+}
+
+// loadLicenseAdvisory loads + verifies the persisted license blob at startup and
+// records the outcome (S1-T17). ADVISORY (LIC-4): it never fails startup and never
+// gates any agent behavior. The Ed25519 verification is real and fail-closed; a
+// tampered/invalid signature emits a license.signature_invalid hash-chained audit
+// event (the LIC-5 anti-tamper signal). A valid-but-expired / not-yet-valid /
+// tenant-mismatched license is logged (parsed, not enforced this sprint). A missing
+// or unverifiable blob (e.g. the fail-closed non-Windows protector) is tolerated
+// silently. Never returns nil.
+func (pb *prodBuilder) loadLicenseAdvisory() *license.Result {
+	blob, err := pb.store.GetSecret(state.SecretLicenseBlob)
+	if err != nil {
+		// Absent, or unverifiable (fail-closed protector): nothing to evaluate.
+		return &license.Result{Status: license.StatusMissing}
+	}
+	token, derr := license.DecodeToken(blob)
+	if derr != nil {
+		if errors.Is(derr, license.ErrNoLicense) {
+			return &license.Result{Status: license.StatusMissing}
+		}
+		pb.licenseInvalid("malformed_envelope")
+		return &license.Result{Status: license.StatusSignatureInvalid, Err: derr}
+	}
+	keys, kerr := license.Embedded()
+	if kerr != nil {
+		// No license trust anchor compiled in -> cannot verify (advisory: record + log).
+		if pb.log != nil {
+			pb.log.Warn("license.no_trust_anchor").Str("reason", "embedded_keyset").Msg("")
+		}
+		return &license.Result{Status: license.StatusSignatureInvalid, Err: kerr}
+	}
+	res := license.Evaluate(token, keys, time.Now().UTC(), pb.getPlain(state.KeyTenantID))
+	switch res.Status {
+	case license.StatusValid:
+		if pb.log != nil {
+			pb.log.Info("license.verified").
+				Str("license_id", res.Claims.LicenseID).Str("plan", res.Claims.Plan).Msg("")
+		}
+	case license.StatusSignatureInvalid:
+		pb.licenseInvalid("verification_failed")
+	default: // expired / not_yet_valid / tenant_mismatch — advisory anomaly, not enforced
+		if pb.log != nil {
+			pb.log.Warn("license.advisory_anomaly").Str("status", string(res.Status)).Msg("")
+		}
+	}
+	return &res
+}
+
+// licenseInvalid emits the frozen license.signature_invalid hash-chained audit event
+// and logs it. reason is a short, non-secret tag — the raw blob/token is NEVER placed
+// in the audit detail or the log (AC-12). Audit unavailability is itself advisory and
+// never fails startup.
+func (pb *prodBuilder) licenseInvalid(reason string) {
+	if pb.log != nil {
+		pb.log.Warn("license.signature_invalid").Str("reason", reason).Msg("")
+	}
+	em, err := pb.newEmitter()
+	if err != nil {
+		return
+	}
+	_, _ = em.Emit(audit.Event{
+		EventType: "license.signature_invalid",
+		Category:  audit.CategoryLicense,
+		Severity:  audit.SeverityWarn,
+		Outcome:   audit.OutcomeFailure,
+		Actor:     "agent",
+		Detail:    map[string]any{"reason": reason},
+	})
 }
