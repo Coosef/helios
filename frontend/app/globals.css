@@ -1,0 +1,25 @@
+/* Global stylesheet. The full Helios design system (tokens + component classes) is
+   ported verbatim from the design package (Backup/styles.css) into _design-tokens.css;
+   only UI-Sprint-1 additions live below. */
+@import "./_design-tokens.css";
+
+/* UI-S1 phase banner — flags screens that are design-preview or backend-pending so the
+   shell never implies a capability the backend does not have yet. */
+.s1-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  margin-bottom: var(--gap);
+  border: 1px solid var(--border);
+  border-radius: var(--r-ctrl);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+.s1-banner.preview { border-color: rgba(var(--ai-rgb), .4); background: rgba(var(--ai-rgb), .07); }
+.s1-banner.pending { border-color: rgba(var(--warn-rgb), .4); background: rgba(var(--warn-rgb), .07); }
+.s1-banner b { color: var(--text-1); }
+
+.page-pad { padding: var(--pad); }
+.grid-auto { display: grid; gap: var(--gap); }
