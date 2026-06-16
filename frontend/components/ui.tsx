@@ -63,7 +63,7 @@ export function StatCard({ icon, tint = "var(--accent)", label, value, sub }: {
   icon: IconKey; tint?: string; label: string; value: ReactNode; sub?: ReactNode;
 }) {
   return (
-    <div className="stat">
+    <div className="card stat">
       <div className="stat-top">
         <span className="stat-ico" style={{ color: tint, background: "color-mix(in oklab, " + tint + " 16%, transparent)" }}>
           <Icon name={icon} size={18} />

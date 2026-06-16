@@ -16,22 +16,22 @@ export default async function DashboardPage() {
   ];
 
   return (
-    <>
+    <div className="stack">
       <PageHeader title="Dashboard" sub="Fleet protection overview · mock data" />
 
-      <div className="grid-auto" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))" }}>
+      <div className="stat-grid">
         <StatCard icon="devices" label="Devices online" value={`${d.devicesOnline}/${d.devicesTotal}`} sub={`${d.devicesDegraded} degraded`} />
         <StatCard icon="jobs" tint="var(--ok)" label="Jobs succeeded (24h)" value={d.jobsSucceeded24h} sub={`${d.jobsFailed24h} failed`} />
         <StatCard icon="storage" tint="var(--accent-2)" label="Protected data" value={bytes(d.protectedBytes)} sub="across all targets" />
         <StatCard icon="alerts" tint="var(--warn)" label="Open alerts" value={d.openAlerts} sub="needs attention" />
       </div>
 
-      <Card className="grid-auto" pad={false}>
+      <Card pad={false}>
         <CardHead title="Recent alerts" sub="Unacknowledged" right={<Link className="btn btn-sm" href="/alerts">View all</Link>} />
         <div style={{ padding: "0 var(--pad) var(--pad)" }}>
           <DataTable columns={cols} rows={open} getKey={(a) => a.id} />
         </div>
       </Card>
-    </>
+    </div>
   );
 }

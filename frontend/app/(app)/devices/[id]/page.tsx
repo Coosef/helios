@@ -38,7 +38,7 @@ export default async function DeviceDetailsPage({ params }: { params: Promise<{ 
         actions={<Link className="btn btn-sm" href="/devices">← Devices</Link>}
       />
 
-      <div className="grid-auto" style={{ gridTemplateColumns: "minmax(280px, 360px) 1fr", alignItems: "start" }}>
+      <div className="cols-detail">
         <Card>
           <CardHead title="Agent" />
           <div className="kv" style={{ marginTop: 8 }}>
