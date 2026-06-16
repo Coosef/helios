@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" role="img" aria-label="Helios">
+  <defs>
+    <linearGradient id="hl0" x1="0" y1="0" x2="0.4" y2="1"><stop offset="0" stop-color="#b06bf2"></stop><stop offset="1" stop-color="#6d28d9"></stop></linearGradient>
+    <linearGradient id="hl1" x1="0" y1="0" x2="0.4" y2="1"><stop offset="0" stop-color="#34e0d0"></stop><stop offset="1" stop-color="#0891b2"></stop></linearGradient>
+    <linearGradient id="hl2" x1="0" y1="0" x2="0.4" y2="1"><stop offset="0" stop-color="#3b82f6"></stop><stop offset="1" stop-color="#1d4ed8"></stop></linearGradient>
+    <linearGradient id="hl3" x1="0" y1="0" x2="0.4" y2="1"><stop offset="0" stop-color="#7c6cf0"></stop><stop offset="1" stop-color="#5b21b6"></stop></linearGradient>
+    <radialGradient id="hlc" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#fff"></stop><stop offset="1" stop-color="#fff" stop-opacity="0"></stop></radialGradient>
+  </defs>
+  <rect width="48" height="48" rx="12" fill="#0b1220"></rect>
+  <path d="M24 24 C16.5 17 16.5 9 24 3 C31.5 9 31.5 17 24 24 Z" fill="url(#hl0)" transform="rotate(-45 24 24)"></path>
+  <path d="M24 24 C16.5 17 16.5 9 24 3 C31.5 9 31.5 17 24 24 Z" fill="url(#hl1)" transform="rotate(45 24 24)"></path>
+  <path d="M24 24 C16.5 17 16.5 9 24 3 C31.5 9 31.5 17 24 24 Z" fill="url(#hl2)" transform="rotate(135 24 24)"></path>
+  <path d="M24 24 C16.5 17 16.5 9 24 3 C31.5 9 31.5 17 24 24 Z" fill="url(#hl3)" transform="rotate(225 24 24)"></path>
+  <circle cx="24" cy="24" r="7" fill="url(#hlc)"></circle>
+  <circle cx="24" cy="24" r="1.8" fill="#fff"></circle>
+</svg>
