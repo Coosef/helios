@@ -7,7 +7,8 @@
 import type {
   ActivitySlice, AgentVersion, Alert, AuditEvent, DashboardInsights, DashboardSummary,
   Device, ExecutiveSummary, Financials, FleetHealth, Job, License, LocationSite,
-  Resilience, SecurityPostureItem, StorageTarget, Tenant, TopRisk, Trend, User,
+  LocationsOverview, RegionGroup, Resilience, RestoreCenter, SecurityPostureItem,
+  SiteRollup, StorageTarget, SuperOverview, Tenant, TopRisk, Trend, User,
 } from "./types";
 
 export const tenants: Tenant[] = [
@@ -178,4 +179,123 @@ export const executiveSummary: ExecutiveSummary = {
   kpis: executiveKpis,
   financials,
   topRisks,
+};
+
+// ---- PR-2 view-model fixtures (restore / locations / super) — illustrative, mock-only.
+// Reuses real device/tenant/site ids so the mock stays internally consistent. Wording
+// follows the existing fail-closed / BLAKE3 / WORM verification vocabulary so nothing
+// implies a capability the Sprint-1 backend lacks.
+
+export const restoreCenter: RestoreCenter = {
+  confidenceScore: 94,
+  maxScore: 100,
+  sourceDeviceId: "dev_01",
+  sourceHost: "ist-dc-01",
+  points: [
+    { id: "rp_1", deviceId: "dev_01", deviceHost: "ist-dc-01", kind: "Incremental", at: "2026-06-16T03:00:00Z", sizeBytes: 8_400_000_000, verified: true, chainOk: true },
+    { id: "rp_2", deviceId: "dev_01", deviceHost: "ist-dc-01", kind: "Incremental", at: "2026-06-15T03:00:00Z", sizeBytes: 11_200_000_000, verified: true, chainOk: true },
+    { id: "rp_3", deviceId: "dev_01", deviceHost: "ist-dc-01", kind: "Incremental", at: "2026-06-14T03:00:00Z", sizeBytes: 9_900_000_000, verified: true, chainOk: true },
+    { id: "rp_4", deviceId: "dev_01", deviceHost: "ist-dc-01", kind: "Full image", at: "2026-06-09T03:00:00Z", sizeBytes: 412_000_000_000, verified: false, chainOk: true },
+  ],
+  tree: [
+    {
+      name: "C:\\", kind: "dir", children: [
+        {
+          name: "shares", kind: "dir", children: [
+            {
+              name: "finance", kind: "dir", children: [
+                { name: "Q2-2026-forecast.xlsx", kind: "file", ext: "xlsx", sizeBytes: 2_400_000, modAt: "2026-06-07T18:22:00Z", selected: true },
+                { name: "invoices.db", kind: "file", ext: "db", sizeBytes: 64_000_000, modAt: "2026-06-16T02:14:00Z" },
+                { name: "audit-2025.pdf", kind: "file", ext: "pdf", sizeBytes: 8_800_000, modAt: "2026-01-12T09:03:00Z" },
+              ],
+            },
+            { name: "contracts", kind: "dir", children: [] },
+          ],
+        },
+        {
+          name: "AD", kind: "dir", children: [
+            { name: "ntds.dit", kind: "file", ext: "dit", sizeBytes: 188_000_000, modAt: "2026-06-16T03:00:00Z" },
+          ],
+        },
+      ],
+    },
+  ],
+  readiness: [
+    { label: "Recovery validation", status: "pass", detail: "Dry-run restore passed — target writable, decryption OK." },
+    { label: "Integrity verification", status: "pass", detail: "BLAKE3 manifest re-verified against the chain." },
+    { label: "Last verified restore", status: "pass", detail: "Jun 2 · completed in 4m 12s." },
+    { label: "RTO validation", status: "pending", detail: "Within 5m target — automated check is backend-pending." },
+    { label: "Immutability", status: "pass", detail: "WORM-locked offsite copy present." },
+  ],
+  activity: [
+    { id: "ra_1", item: "finance\\Q2-2026-forecast.xlsx", type: "File", destination: "ist-dc-01 · original location", by: "Sofia Delacroix", status: "success", progressPct: null, when: "12 min ago" },
+    { id: "ra_2", item: "meridian_prod", type: "Database", destination: "staging area", by: "Jonas Weyland", status: "running", progressPct: 64, when: "in progress" },
+    { id: "ra_3", item: "belek-fs-01 (full image)", type: "Bare-metal", destination: "dissimilar hardware", by: "Mara Okonkwo", status: "queued", progressPct: null, when: "queued" },
+    { id: "ra_4", item: "sto-law-03\\Desktop", type: "Folder", destination: "download archive (.zip)", by: "Anders Lindqvist", status: "success", progressPct: null, when: "yesterday" },
+  ],
+};
+
+// Super-admin-plane rollups. Same 3 tenant ids/names/colors as `tenants` — no new tenants
+// invented. mrr/health are illustrative platform metrics (EUR), clearly mock.
+const tenantRollups = [
+  { id: "tnt_meridian", name: "Meridian Hotels", plan: "Enterprise", color: "#2563EB", devices: 30, online: 28, offline: 2, health: 96, mrr: 2100, status: "active" as const },
+  { id: "tnt_aegis", name: "Aegis Manufacturing", plan: "Business", color: "#14B8A6", devices: 14, online: 12, offline: 2, health: 88, mrr: 1120, status: "active" as const },
+  { id: "tnt_lindqvist", name: "Lindqvist Legal", plan: "Business", color: "#a78bff", devices: 4, online: 4, offline: 0, health: 99, mrr: 320, status: "active" as const },
+];
+
+export const superOverview: SuperOverview = {
+  kpis: {
+    tenants: tenantRollups.length,
+    managedDevices: tenantRollups.reduce((s, t) => s + t.devices, 0),
+    mrr: tenantRollups.reduce((s, t) => s + t.mrr, 0),
+    arr: tenantRollups.reduce((s, t) => s + t.mrr, 0) * 12,
+    slaPct: 99.98,
+    openCriticalAlerts: 1,
+  },
+  deviceTrend: [40, 41, 41, 42, 43, 43, 44, 45, 45, 46, 46, 47, 47, 48],
+  trendLabels: ["May 20", "May 27", "Jun 3", "Jun 10"],
+  tenants: tenantRollups,
+  regions: [
+    { name: "EU-West · Frankfurt", role: "Primary", uptimePct: 99.99, nodes: 12, usedTB: 142, capacityTB: 280, tint: "var(--accent)" },
+    { name: "EU-Central · Amsterdam", role: "Replica", uptimePct: 99.98, nodes: 8, usedTB: 98, capacityTB: 220, tint: "var(--info)" },
+    { name: "EU-North · Stockholm", role: "Replica", uptimePct: 99.95, nodes: 5, usedTB: 44, capacityTB: 120, tint: "var(--ok)" },
+  ],
+  crossTenantAlerts: [
+    { id: "xa_1", severity: "critical", title: "Storage node ams-03 at 88% capacity", source: "Infrastructure", category: "Capacity", at: "8 min ago" },
+    { id: "xa_2", severity: "warning", title: "Aegis agent fleet: 3 devices on EOL build", source: "Aegis Manufacturing", category: "Updates", at: "1h ago" },
+    { id: "xa_3", severity: "warning", title: "Belek Vault second copy lagging", source: "Meridian Hotels", category: "Replication", at: "2h ago" },
+    { id: "xa_4", severity: "info", title: "Lindqvist Legal onboarding 2 new sites", source: "Lindqvist Legal", category: "Provisioning", at: "today" },
+  ],
+};
+
+// Site rollups reuse the 4 existing location ids/health from `locations`, augmented with
+// city/breakdown/storage fields the cards need. linuxPrepOnly reflects the existing Linux
+// 'prep-only' device (dev_04 at the Amsterdam plant).
+const siteRollups: SiteRollup[] = [
+  { id: "loc_ist", tenantId: "tnt_meridian", tenantName: "Meridian Hotels", tenantColor: "#2563EB", name: "Istanbul HQ", city: "Istanbul", deviceCount: 18, online: 17, offline: 0, warning: 1, linuxPrepOnly: 0, health: 97, protectedBytes: 2_800_000_000_000, storageStatus: "healthy", storageName: "Istanbul QNAP" },
+  { id: "loc_belek", tenantId: "tnt_meridian", tenantName: "Meridian Hotels", tenantColor: "#2563EB", name: "Belek Resort", city: "Antalya", deviceCount: 12, online: 10, offline: 1, warning: 1, linuxPrepOnly: 0, health: 91, protectedBytes: 980_000_000_000, storageStatus: "warning", storageName: "Belek Vault" },
+  { id: "loc_ams", tenantId: "tnt_aegis", tenantName: "Aegis Manufacturing", tenantColor: "#14B8A6", name: "Amsterdam Plant", city: "Amsterdam", deviceCount: 14, online: 12, offline: 1, warning: 1, linuxPrepOnly: 1, health: 88, protectedBytes: 1_200_000_000_000, storageStatus: "healthy", storageName: "Amsterdam MinIO" },
+  { id: "loc_sto", tenantId: "tnt_lindqvist", tenantName: "Lindqvist Legal", tenantColor: "#a78bff", name: "Stockholm Office", city: "Stockholm", deviceCount: 4, online: 4, offline: 0, warning: 0, linuxPrepOnly: 0, health: 99, protectedBytes: 0, storageStatus: "healthy", storageName: "Helios Cloud · eu-central" },
+];
+
+const siteGroups: RegionGroup[] = Object.values(
+  siteRollups.reduce<Record<string, RegionGroup>>((acc, s) => {
+    (acc[s.city] ??= { city: s.city, sites: [], deviceCount: 0, avgHealth: 0 }).sites.push(s);
+    return acc;
+  }, {}),
+).map((g) => ({
+  ...g,
+  deviceCount: g.sites.reduce((s, x) => s + x.deviceCount, 0),
+  avgHealth: Math.round(g.sites.reduce((s, x) => s + x.health, 0) / g.sites.length),
+}));
+
+export const locationsOverview: LocationsOverview = {
+  sites: siteRollups,
+  groups: siteGroups,
+  kpis: {
+    siteCount: siteRollups.length,
+    deviceCount: siteRollups.reduce((s, x) => s + x.deviceCount, 0),
+    cityCount: siteGroups.length,
+    avgHealth: Math.round(siteRollups.reduce((s, x) => s + x.health, 0) / siteRollups.length),
+  },
 };

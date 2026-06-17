@@ -40,6 +40,37 @@ test("dashboard + executive view models are served through the facade", async ()
   assert.ok(exec.topRisks.length > 0, "executive top risks present");
 });
 
+test("PR-2 view models (restore/locations/super) are served through the facade", async () => {
+  const api = getApi();
+
+  const rc = await api.getRestoreCenter();
+  assert.ok(rc.confidenceScore > 0 && rc.confidenceScore <= rc.maxScore, "restore confidence in range");
+  assert.ok(rc.points.length > 1, "restore points present");
+  assert.ok(rc.tree.length > 0, "file tree present");
+  assert.ok(rc.readiness.some((r) => r.status === "pending"), "a readiness check is honestly marked pending");
+  assert.ok(rc.activity.length > 0, "restore activity present");
+  // restore points reference real device ids (internal consistency)
+  const devIds = new Set((await api.getDevices()).map((d) => d.id));
+  assert.ok(rc.points.every((p) => devIds.has(p.deviceId)), "restore points reference real device ids");
+
+  const lo = await api.getLocationsOverview();
+  assert.equal(lo.kpis.siteCount, lo.sites.length, "site KPI matches site count");
+  assert.equal(lo.kpis.deviceCount, lo.sites.reduce((s, x) => s + x.deviceCount, 0), "device KPI is the site sum");
+  assert.ok(lo.groups.length > 0, "region groups present");
+  assert.ok(lo.sites.some((s) => s.linuxPrepOnly > 0), "a site notes a Linux prep-only device");
+  // getLocations() (lean) and getLocationsOverview() (rich) stay coherent on shared ids
+  const leanIds = new Set((await api.getLocations()).map((l) => l.id));
+  assert.ok(lo.sites.every((s) => leanIds.has(s.id)), "overview site ids match lean locations");
+
+  const so = await api.getSuperOverview();
+  assert.equal(so.kpis.tenants, so.tenants.length, "tenant KPI matches rollup count");
+  assert.equal(so.kpis.managedDevices, so.tenants.reduce((s, t) => s + t.devices, 0), "device KPI is the tenant sum");
+  assert.ok(so.regions.length > 0 && so.crossTenantAlerts.length > 0, "regions + cross-tenant alerts present");
+  // super rollups reuse the real tenant ids — no invented tenants
+  const tenantIds = new Set((await api.getTenants()).map((t) => t.id));
+  assert.ok(so.tenants.every((t) => tenantIds.has(t.id)), "super tenant rollups reuse real tenant ids");
+});
+
 test("license is advisory-shaped (claims present; status is a known value)", async () => {
   const lic = await getApi().getLicense();
   const known = ["valid", "expired", "not_yet_valid", "tenant_mismatch", "signature_invalid", "missing"];

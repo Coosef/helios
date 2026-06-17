@@ -262,3 +262,143 @@ export interface ExecutiveSummary {
   financials: Financials;
   topRisks: TopRisk[];
 }
+
+// ---- Batch-A PR-2 view models: restore / locations / super (all illustrative mock) ----
+
+/** A point in a recovery timeline (mock — restore engine lands in a later sprint). */
+export interface RestorePoint {
+  id: string;
+  deviceId: string;
+  deviceHost: string;
+  kind: "Full image" | "Incremental";
+  at: string;
+  sizeBytes: number;
+  verified: boolean;
+  chainOk: boolean;
+}
+
+export interface RecoveryReadinessCheck {
+  label: string;
+  status: "pass" | "pending" | "fail";
+  detail: string;
+}
+
+export interface RestoreActivityEntry {
+  id: string;
+  item: string;
+  type: "File" | "Folder" | "Database" | "VM" | "Bare-metal";
+  destination: string;
+  by: string;
+  status: JobStatus;
+  /** 0–100 while running; null when not applicable. */
+  progressPct: number | null;
+  when: string;
+}
+
+/** Recursive file-browser node (mock listing of a recovery point). */
+export interface FileNode {
+  name: string;
+  kind: "dir" | "file";
+  ext?: string;
+  sizeBytes?: number;
+  modAt?: string;
+  selected?: boolean;
+  children?: FileNode[];
+}
+
+export interface RestoreCenter {
+  confidenceScore: number;
+  maxScore: number;
+  sourceDeviceId: string;
+  sourceHost: string;
+  points: RestorePoint[];
+  tree: FileNode[];
+  readiness: RecoveryReadinessCheck[];
+  activity: RestoreActivityEntry[];
+}
+
+// ---- /locations ----
+
+export interface SiteRollup {
+  id: string;
+  tenantId: string;
+  tenantName: string;
+  tenantColor: string;
+  name: string;
+  city: string;
+  deviceCount: number;
+  online: number;
+  offline: number;
+  warning: number;
+  linuxPrepOnly: number;
+  health: number;
+  protectedBytes: number;
+  storageStatus: "healthy" | "warning" | "offline";
+  storageName: string;
+}
+
+export interface RegionGroup {
+  city: string;
+  sites: SiteRollup[];
+  deviceCount: number;
+  avgHealth: number;
+}
+
+export interface LocationsOverview {
+  sites: SiteRollup[];
+  groups: RegionGroup[];
+  kpis: { siteCount: number; deviceCount: number; cityCount: number; avgHealth: number };
+}
+
+// ---- /super (super-admin cross-tenant plane) ----
+
+export interface TenantRollup {
+  id: string;
+  name: string;
+  plan: string;
+  color: string;
+  devices: number;
+  online: number;
+  offline: number;
+  health: number;
+  /** Monthly recurring revenue (illustrative, EUR). */
+  mrr: number;
+  status: "active" | "suspended";
+}
+
+export interface RegionRollup {
+  name: string;
+  role: string;
+  uptimePct: number;
+  nodes: number;
+  usedTB: number;
+  capacityTB: number;
+  tint: string;
+}
+
+export interface PlatformKpis {
+  tenants: number;
+  managedDevices: number;
+  mrr: number;
+  arr: number;
+  slaPct: number;
+  openCriticalAlerts: number;
+}
+
+export interface CrossTenantAlert {
+  id: string;
+  severity: AlertSeverity;
+  title: string;
+  source: string;
+  category: string;
+  at: string;
+}
+
+export interface SuperOverview {
+  kpis: PlatformKpis;
+  deviceTrend: number[];
+  trendLabels: string[];
+  tenants: TenantRollup[];
+  regions: RegionRollup[];
+  crossTenantAlerts: CrossTenantAlert[];
+}

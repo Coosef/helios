@@ -95,9 +95,11 @@ export function Swatch({ color, size = 9 }: { color: string; size?: number }) {
 }
 
 export function Meter({ value, color = "var(--accent)", thin }: { value: number; color?: string; thin?: boolean }) {
+  // Guard non-finite input (NaN/Infinity) so a bad upstream value renders as 0%, not "NaN%".
+  const v = Number.isFinite(value) ? value : 0;
   return (
     <div className={cx("meter", thin && "meter-thin")}>
-      <span style={{ width: Math.max(0, Math.min(100, value)) + "%", background: color }} />
+      <span style={{ width: Math.max(0, Math.min(100, v)) + "%", background: color }} />
     </div>
   );
 }
