@@ -5,8 +5,9 @@
 // prototype credential placeholders.
 
 import type {
-  AgentVersion, Alert, AuditEvent, DashboardSummary, Device, Job, License,
-  LocationSite, StorageTarget, Tenant, User,
+  ActivitySlice, AgentVersion, Alert, AuditEvent, DashboardInsights, DashboardSummary,
+  Device, ExecutiveSummary, Financials, FleetHealth, Job, License, LocationSite,
+  Resilience, SecurityPostureItem, StorageTarget, Tenant, TopRisk, Trend, User,
 } from "./types";
 
 export const tenants: Tenant[] = [
@@ -94,4 +95,87 @@ export const dashboard: DashboardSummary = {
   jobsFailed24h: 4,
   protectedBytes: 6_980_000_000_000,
   openAlerts: 3,
+};
+
+// ---- Batch-A view-model fixtures (illustrative mock data, mock-only) -----------------
+// Colors reference theme tokens (var(--ok) etc.) so charts re-theme in dark/light mode.
+
+export const resilience: Resilience = {
+  score: 87,
+  grade: "A−",
+  delta: 3,
+  pillars: [
+    { label: "Backup success", score: 96, color: "var(--ok)" },
+    { label: "Restore readiness", score: 88, color: "var(--accent)" },
+    { label: "Coverage", score: 82, color: "var(--info)" },
+    { label: "Storage headroom", score: 74, color: "var(--warn)" },
+  ],
+};
+
+// 14-day trend. protectedTB in TB, resilienceScore on 0–100.
+export const trend: Trend = {
+  labels: ["Jun 3", "Jun 7", "Jun 11", "Jun 15"],
+  protectedTB: [5.9, 6.0, 6.1, 6.2, 6.25, 6.3, 6.4, 6.5, 6.55, 6.6, 6.7, 6.8, 6.9, 6.98],
+  resilienceScore: [80, 81, 81, 83, 82, 84, 85, 84, 85, 86, 86, 87, 86, 87],
+};
+
+// 24h job-activity distribution (counts by outcome) for the dashboard donut.
+export const activity24h: ActivitySlice[] = [
+  { label: "Succeeded", value: 312, color: "var(--ok)" },
+  { label: "Running", value: 9, color: "var(--info)" },
+  { label: "Queued", value: 11, color: "var(--text-2)" },
+  { label: "Failed", value: 4, color: "var(--crit)" },
+];
+
+export const fleetHealth: FleetHealth = {
+  online: 41,
+  warning: 5,
+  offline: 2,
+};
+
+export const securityPosture: SecurityPostureItem[] = [
+  { label: "Agent identity (mTLS / SPKI pinning)", ok: true, detail: "All enrolled agents present a pinned client certificate." },
+  { label: "Update signature enforcement", ok: true, detail: "Signed manifests verified fail-closed before swap." },
+  { label: "Audit chain integrity", ok: true, detail: "BLAKE3 hash chain continuous across the fleet." },
+  { label: "Storage encryption at rest", ok: true, detail: "AES-256-GCM on all attached targets." },
+  { label: "Offsite copy (3-2-1)", ok: false, detail: "Belek Vault second copy lagging — backend-pending." },
+];
+
+export const topRisks: TopRisk[] = [
+  { id: "risk_1", severity: "critical", title: "belek-fs-01 backup failing", impact: "File-server recovery point 30h+ stale", owner: "Meridian Ops" },
+  { id: "risk_2", severity: "warning", title: "Belek Vault near capacity", impact: "98% used — new recovery points at risk", owner: "Meridian Ops" },
+  { id: "risk_3", severity: "warning", title: "ams-vm-12 agent degraded", impact: "Update rolled back; hypervisor unprotected", owner: "Aegis IT" },
+  { id: "risk_4", severity: "info", title: "ams-app-07 not enrolled", impact: "Linux app server outside protection scope", owner: "Aegis IT" },
+];
+
+const executiveKpis: ExecutiveSummary["kpis"] = {
+  protectedAssets: 48,
+  protectedTB: 6.98,
+  successRate: 98.7,
+  complianceScore: 92,
+  restoreReadiness: 88,
+  storageRunwayDays: 134,
+};
+
+const financials: Financials = {
+  savedByDedupUsd: 184_000,
+  projectedAnnualUsd: 612_000,
+  dataAtRiskAvoidedUsd: 2_400_000,
+};
+
+export const dashboardInsights: DashboardInsights = {
+  resilience,
+  trend,
+  activity: activity24h,
+  fleet: fleetHealth,
+  securityPosture,
+  topRisks,
+};
+
+export const executiveSummary: ExecutiveSummary = {
+  resilience,
+  trend,
+  kpis: executiveKpis,
+  financials,
+  topRisks,
 };

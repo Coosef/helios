@@ -6,8 +6,8 @@
 // Screens MUST import data only through getApi(), never from lib/fixtures directly.
 
 import type {
-  AgentVersion, Alert, AuditEvent, DashboardSummary, Device, Job, License,
-  LocationSite, StorageTarget, Tenant, User,
+  AgentVersion, Alert, AuditEvent, DashboardInsights, DashboardSummary, Device,
+  ExecutiveSummary, Job, License, LocationSite, StorageTarget, Tenant, User,
 } from "./types";
 import * as fx from "./fixtures";
 
@@ -15,6 +15,8 @@ export interface HeliosApi {
   getTenants(): Promise<Tenant[]>;
   getLocations(): Promise<LocationSite[]>;
   getDashboard(): Promise<DashboardSummary>;
+  getDashboardInsights(): Promise<DashboardInsights>;
+  getExecutiveSummary(): Promise<ExecutiveSummary>;
   getDevices(): Promise<Device[]>;
   getDevice(id: string): Promise<Device | undefined>;
   getJobs(): Promise<Job[]>;
@@ -35,6 +37,8 @@ export const mockApi: HeliosApi = {
   getTenants: () => ok(fx.tenants),
   getLocations: () => ok(fx.locations),
   getDashboard: () => ok(fx.dashboard),
+  getDashboardInsights: () => ok(fx.dashboardInsights),
+  getExecutiveSummary: () => ok(fx.executiveSummary),
   getDevices: () => ok(fx.devices),
   getDevice: (id) => ok(fx.devices.find((d) => d.id === id)),
   getJobs: () => ok(fx.jobs),

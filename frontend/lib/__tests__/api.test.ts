@@ -23,6 +23,23 @@ test("fixtures contain no forbidden product wording", () => {
   assert.ok(!blob.includes("beyz backup"), "no 'beyz backup' product wording");
 });
 
+test("dashboard + executive view models are served through the facade", async () => {
+  const api = getApi();
+  const insights = await api.getDashboardInsights();
+  assert.ok(insights.resilience.score >= 0 && insights.resilience.score <= 100, "resilience score in range");
+  assert.ok(insights.trend.protectedTB.length > 1, "trend series has points");
+  assert.equal(insights.trend.protectedTB.length, insights.trend.resilienceScore.length, "trend series aligned");
+  assert.ok(insights.activity.length > 0, "24h activity distribution present");
+  assert.ok(insights.fleet.online + insights.fleet.warning + insights.fleet.offline > 0, "fleet health present");
+  assert.ok(insights.securityPosture.length > 0, "security posture present");
+  assert.ok(insights.topRisks.length > 0, "top risks present");
+
+  const exec = await api.getExecutiveSummary();
+  assert.ok(exec.kpis.protectedAssets > 0, "executive KPIs present");
+  assert.ok(exec.financials.projectedAnnualUsd > 0, "financials present");
+  assert.ok(exec.topRisks.length > 0, "executive top risks present");
+});
+
 test("license is advisory-shaped (claims present; status is a known value)", async () => {
   const lic = await getApi().getLicense();
   const known = ["valid", "expired", "not_yet_valid", "tenant_mismatch", "signature_invalid", "missing"];

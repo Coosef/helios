@@ -183,3 +183,82 @@ export interface DashboardSummary {
   protectedBytes: number;
   openAlerts: number;
 }
+
+// ---- Batch-A dashboard/executive mock view models (all illustrative, mock-only) ----
+
+export interface ResiliencePillar {
+  label: string;
+  score: number;
+  color: string;
+}
+
+export interface Resilience {
+  score: number; // 0–100
+  grade: string; // e.g. "A−"
+  delta: number; // points vs last month
+  pillars: ResiliencePillar[];
+}
+
+export interface Trend {
+  labels: string[];
+  protectedTB: number[];
+  resilienceScore: number[];
+}
+
+export interface ActivitySlice {
+  label: string;
+  value: number;
+  color: string;
+}
+
+export interface FleetHealth {
+  online: number;
+  warning: number;
+  offline: number;
+}
+
+export interface SecurityPostureItem {
+  label: string;
+  ok: boolean;
+  detail: string;
+}
+
+export interface TopRisk {
+  id: string;
+  severity: AlertSeverity;
+  title: string;
+  impact: string;
+  owner: string;
+}
+
+export interface ExecutiveKpis {
+  protectedAssets: number;
+  protectedTB: number;
+  successRate: number; // %
+  complianceScore: number; // /100
+  restoreReadiness: number; // /100
+  storageRunwayDays: number;
+}
+
+export interface Financials {
+  savedByDedupUsd: number;
+  projectedAnnualUsd: number;
+  dataAtRiskAvoidedUsd: number;
+}
+
+export interface DashboardInsights {
+  resilience: Resilience;
+  trend: Trend;
+  activity: ActivitySlice[];
+  fleet: FleetHealth;
+  securityPosture: SecurityPostureItem[];
+  topRisks: TopRisk[];
+}
+
+export interface ExecutiveSummary {
+  resilience: Resilience;
+  trend: Trend;
+  kpis: ExecutiveKpis;
+  financials: Financials;
+  topRisks: TopRisk[];
+}
