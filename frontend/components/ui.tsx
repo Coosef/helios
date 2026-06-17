@@ -59,8 +59,9 @@ export function CardHead({ title, sub, right }: { title: ReactNode; sub?: ReactN
   );
 }
 
-export function StatCard({ icon, tint = "var(--accent)", label, value, sub }: {
+export function StatCard({ icon, tint = "var(--accent)", label, value, sub, delta, spark }: {
   icon: IconKey; tint?: string; label: string; value: ReactNode; sub?: ReactNode;
+  delta?: number; spark?: number[];
 }) {
   return (
     <div className="card stat">
@@ -71,9 +72,26 @@ export function StatCard({ icon, tint = "var(--accent)", label, value, sub }: {
         <span className="muted fs-12">{label}</span>
       </div>
       <div className="stat-val display tnum">{value}</div>
-      {sub && <div className="stat-sub muted fs-12">{sub}</div>}
+      {(sub || delta != null) && (
+        <div className="stat-sub muted fs-12">
+          {delta != null && (
+            <span className={delta >= 0 ? "delta-up" : "delta-down"} style={{ fontWeight: 600 }}>
+              {delta >= 0 ? "▲" : "▼"} {Math.abs(delta)}%
+            </span>
+          )}
+          {sub && <span>{sub}</span>}
+        </div>
+      )}
+      {spark && spark.length > 1 && (
+        <div className="stat-spark"><Sparkline data={spark} color={tint} h={40} /></div>
+      )}
     </div>
   );
+}
+
+/** Small color swatch used in chart legends. */
+export function Swatch({ color, size = 9 }: { color: string; size?: number }) {
+  return <span style={{ width: size, height: size, borderRadius: 3, background: color, display: "inline-block" }} />;
 }
 
 export function Meter({ value, color = "var(--accent)", thin }: { value: number; color?: string; thin?: boolean }) {

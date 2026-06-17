@@ -75,3 +75,52 @@ test("dashboard + executive use the responsive grid layout helpers", () => {
   assert.match(read("app/(app)/dashboard/page.tsx"), /stat-grid/);
   assert.match(read("app/(app)/executive/page.tsx"), /stat-grid|cols-2/);
 });
+
+test("chart primitives module exists and exports the Batch-A primitives", () => {
+  const src = read("components/charts.tsx");
+  assert.match(src, /^"use client";/, "charts.tsx is a client module");
+  for (const name of ["AreaChart", "Donut", "Gauge", "CapacityBar"]) {
+    assert.match(src, new RegExp(`export function ${name}\\b`), `charts.tsx exports ${name}`);
+  }
+  // Gradient IDs must be stable (useId), never Math.random — that would break hydration.
+  assert.match(src, /useId\(\)/, "charts use useId() for stable SVG ids");
+  assert.doesNotMatch(src, /Math\.random\s*\(/, "charts must not call Math.random for ids");
+});
+
+test("dashboard + executive render the ported chart primitives", () => {
+  for (const page of ["app/(app)/dashboard/page.tsx", "app/(app)/executive/page.tsx"]) {
+    const src = read(page);
+    assert.match(src, /from "@\/components\/charts"/, `${page} imports chart primitives`);
+    assert.match(src, /<(Gauge|Donut|AreaChart)\b/, `${page} renders a chart primitive`);
+  }
+});
+
+test("pages read data only through getApi(), never raw fixtures", () => {
+  for (const page of ["app/(app)/dashboard/page.tsx", "app/(app)/executive/page.tsx"]) {
+    const src = read(page);
+    assert.match(src, /getApi\(\)/, `${page} uses the getApi() facade`);
+    assert.doesNotMatch(src, /from ["'][^"']*lib\/fixtures/, `${page} must not import lib/fixtures directly`);
+  }
+});
+
+test("no source performs real network calls (mock-only shell)", () => {
+  const netRe = /\b(?:fetch\s*\(|axios|XMLHttpRequest|new\s+WebSocket)\b/;
+  for (const root of ["app", "components", "lib"]) {
+    for (const file of walk(join(FE, root))) {
+      if (/__tests__/.test(file)) continue;
+      const src = readFileSync(file, "utf8");
+      assert.ok(!netRe.test(src), `${file} must not make real network calls`);
+    }
+  }
+});
+
+test("no source mentions forbidden product wording (Argus / Beyz Backup)", () => {
+  for (const root of ["app", "components", "lib"]) {
+    for (const file of walk(join(FE, root))) {
+      if (/__tests__/.test(file)) continue; // guard tests assert the strings' absence
+      const src = readFileSync(file, "utf8").toLowerCase();
+      assert.ok(!src.includes("argus"), `${file} must not mention 'argus'`);
+      assert.ok(!src.includes("beyz backup"), `${file} must not mention 'beyz backup'`);
+    }
+  }
+});

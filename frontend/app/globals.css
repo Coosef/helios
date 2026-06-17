@@ -36,3 +36,16 @@
   .cols-2 { grid-template-columns: 1fr; }
   .cols-detail { grid-template-columns: 1fr; }
 }
+
+/* Batch-A composition helpers (dashboard + executive marquee screens). */
+/* Resilience hero: score gauge/donut beside a flexible content column. */
+.hero-split { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 28px; align-items: center; }
+/* Vertical list of separated rows (top risks, security posture) inside a pad=false card. */
+.list-rows { display: flex; flex-direction: column; }
+.list-rows > * { padding: 12px var(--pad); border-top: 1px solid var(--border); }
+.list-rows > *:first-child { border-top: none; }
+/* Small label/value pillar rows used under the resilience gauge. */
+.pillar { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; }
+@media (max-width: 720px) {
+  .hero-split { grid-template-columns: 1fr; justify-items: center; text-align: center; }
+}
