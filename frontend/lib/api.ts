@@ -7,16 +7,20 @@
 
 import type {
   AgentVersion, Alert, AuditEvent, DashboardInsights, DashboardSummary, Device,
-  ExecutiveSummary, Job, License, LocationSite, StorageTarget, Tenant, User,
+  ExecutiveSummary, Job, License, LocationSite, LocationsOverview, RestoreCenter,
+  StorageTarget, SuperOverview, Tenant, User,
 } from "./types";
 import * as fx from "./fixtures";
 
 export interface HeliosApi {
   getTenants(): Promise<Tenant[]>;
   getLocations(): Promise<LocationSite[]>;
+  getLocationsOverview(): Promise<LocationsOverview>;
   getDashboard(): Promise<DashboardSummary>;
   getDashboardInsights(): Promise<DashboardInsights>;
   getExecutiveSummary(): Promise<ExecutiveSummary>;
+  getRestoreCenter(): Promise<RestoreCenter>;
+  getSuperOverview(): Promise<SuperOverview>;
   getDevices(): Promise<Device[]>;
   getDevice(id: string): Promise<Device | undefined>;
   getJobs(): Promise<Job[]>;
@@ -36,9 +40,12 @@ const ok = <T>(v: T): Promise<T> => Promise.resolve(v);
 export const mockApi: HeliosApi = {
   getTenants: () => ok(fx.tenants),
   getLocations: () => ok(fx.locations),
+  getLocationsOverview: () => ok(fx.locationsOverview),
   getDashboard: () => ok(fx.dashboard),
   getDashboardInsights: () => ok(fx.dashboardInsights),
   getExecutiveSummary: () => ok(fx.executiveSummary),
+  getRestoreCenter: () => ok(fx.restoreCenter),
+  getSuperOverview: () => ok(fx.superOverview),
   getDevices: () => ok(fx.devices),
   getDevice: (id) => ok(fx.devices.find((d) => d.id === id)),
   getJobs: () => ok(fx.jobs),

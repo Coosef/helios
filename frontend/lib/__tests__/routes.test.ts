@@ -22,6 +22,9 @@ const KEY_ROUTES = [
   "app/(app)/layout.tsx", // shell
   "app/(app)/dashboard/page.tsx", // dashboard
   "app/(app)/executive/page.tsx", // executive overview
+  "app/(app)/restore/page.tsx", // restore center (PR-2)
+  "app/(app)/locations/page.tsx", // locations (PR-2)
+  "app/(app)/super/page.tsx", // super-admin overview (PR-2)
 ];
 
 test("key route modules exist and export a default", () => {
@@ -96,11 +99,37 @@ test("dashboard + executive render the ported chart primitives", () => {
 });
 
 test("pages read data only through getApi(), never raw fixtures", () => {
-  for (const page of ["app/(app)/dashboard/page.tsx", "app/(app)/executive/page.tsx"]) {
+  const pages = [
+    "app/(app)/dashboard/page.tsx", "app/(app)/executive/page.tsx",
+    "app/(app)/restore/page.tsx", "app/(app)/locations/page.tsx", "app/(app)/super/page.tsx",
+  ];
+  for (const page of pages) {
     const src = read(page);
     assert.match(src, /getApi\(\)/, `${page} uses the getApi() facade`);
     assert.doesNotMatch(src, /from ["'][^"']*lib\/fixtures/, `${page} must not import lib/fixtures directly`);
   }
+});
+
+test("PR-2 pages (restore/locations/super) have richer compositions + honest preview labels", () => {
+  const restore = read("app/(app)/restore/page.tsx");
+  // backend-pending banner must remain; timeline + file tree + readiness gauge + activity table
+  assert.match(restore, /Banner kind="pending"/, "restore keeps the backend-pending banner");
+  assert.match(restore, /from "@\/components\/charts"/, "restore uses a shared chart primitive");
+  assert.match(restore, /className="tl"/, "restore renders a recovery timeline");
+  assert.match(restore, /tree-row/, "restore renders a file-tree browser");
+  assert.match(restore, /<DataTable\b/, "restore renders the recent-activity table");
+
+  const locations = read("app/(app)/locations/page.tsx");
+  assert.match(locations, /stat-grid/, "locations has a KPI grid");
+  assert.match(locations, /grid-auto/, "locations renders per-site cards");
+  assert.match(locations, /<Meter\b/, "locations renders health meters");
+  assert.match(locations, /prep-only/, "locations keeps the Linux prep-only note");
+
+  const sup = read("app/(app)/super/page.tsx");
+  assert.match(sup, /Banner kind="preview"/, "super keeps the future-preview banner");
+  assert.match(sup, /stat-grid/, "super has a cross-tenant KPI grid");
+  assert.match(sup, /<DataTable\b/, "super renders the tenant fleet table");
+  assert.match(sup, /from "@\/components\/charts"/, "super uses a shared chart primitive");
 });
 
 test("no source performs real network calls (mock-only shell)", () => {

@@ -23,6 +23,11 @@
 
 .page-pad { padding: var(--pad); }
 .grid-auto { display: grid; gap: var(--gap); }
+/* Horizontal-scroll wrapper for wide tables on narrow screens. */
+.scroll-x { overflow-x: auto; }
+/* Make a disabled segmented control read as inert (design-preview period selectors). */
+.seg button:disabled { opacity: .6; cursor: default; }
+.seg button:disabled:hover { color: var(--text-2); }
 
 /* Responsive dashboard layout helpers (UI-S1). stat-grid fills the row with equal
    tiles that wrap; cols-2 is a wide primary + narrower secondary that stacks on small
