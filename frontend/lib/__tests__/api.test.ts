@@ -71,6 +71,36 @@ test("PR-2 view models (restore/locations/super) are served through the facade",
   assert.ok(so.tenants.every((t) => tenantIds.has(t.id)), "super tenant rollups reuse real tenant ids");
 });
 
+test("PR-3 storage overview is coherent with the storage targets", async () => {
+  const api = getApi();
+  const targets = await api.getStorageTargets();
+  const so = await api.getStorageOverview();
+  // KPI used/cap are summed from the real targets — never contradictory
+  assert.equal(so.kpis.usedBytes, targets.reduce((s, t) => s + t.usedBytes, 0), "used = sum of targets");
+  assert.equal(so.kpis.capacityBytes, targets.reduce((s, t) => s + t.capacityBytes, 0), "capacity = sum of targets");
+  assert.equal(so.kpis.usagePct, Math.round((so.kpis.usedBytes / so.kpis.capacityBytes) * 100), "usagePct derived");
+  assert.equal(so.targets, targets, "overview targets alias the storageTargets fixture");
+  assert.ok(so.coverage.length > 0 && so.tiers.length > 0, "coverage + tier segments present");
+  // optional presentational fields are populated on every target
+  assert.ok(targets.every((t) => t.region && t.encryption), "targets carry region + encryption");
+});
+
+test("deviceHealth derives an in-range score + consistent grade/tone for every device", async () => {
+  const { deviceHealth } = await import("../derive");
+  for (const d of await getApi().getDevices()) {
+    const h = deviceHealth(d);
+    assert.ok(h.score >= 0 && h.score <= 100, `${d.id} score in range`);
+    assert.ok(["Excellent", "Good", "Warning", "Critical"].includes(h.grade), `${d.id} grade valid`);
+    assert.ok(["ok", "warn", "crit"].includes(h.tone), `${d.id} tone valid`);
+    assert.ok(typeof h.color === "string" && h.color.startsWith("var(--"), `${d.id} color is a token`);
+  }
+  // an enrolled+online+up-to-date device should grade well; an offline/unenrolled one should not
+  const devices = await getApi().getDevices();
+  const healthy = devices.find((d) => d.enrollment === "enrolled" && d.presence === "online" && d.updateStatus === "up_to_date");
+  const weak = devices.find((d) => d.presence === "offline" || d.enrollment === "unenrolled");
+  if (healthy && weak) assert.ok(deviceHealth(healthy).score > deviceHealth(weak).score, "healthy device outscores weak device");
+});
+
 test("license is advisory-shaped (claims present; status is a known value)", async () => {
   const lic = await getApi().getLicense();
   const known = ["valid", "expired", "not_yet_valid", "tenant_mismatch", "signature_invalid", "missing"];

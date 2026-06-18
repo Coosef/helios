@@ -8,7 +8,7 @@
 import type {
   AgentVersion, Alert, AuditEvent, DashboardInsights, DashboardSummary, Device,
   ExecutiveSummary, Job, License, LocationSite, LocationsOverview, RestoreCenter,
-  StorageTarget, SuperOverview, Tenant, User,
+  StorageOverview, StorageTarget, SuperOverview, Tenant, User,
 } from "./types";
 import * as fx from "./fixtures";
 
@@ -26,6 +26,7 @@ export interface HeliosApi {
   getJobs(): Promise<Job[]>;
   getJob(id: string): Promise<Job | undefined>;
   getStorageTargets(): Promise<StorageTarget[]>;
+  getStorageOverview(): Promise<StorageOverview>;
   getAlerts(): Promise<Alert[]>;
   getAuditEvents(): Promise<AuditEvent[]>;
   getUsers(): Promise<User[]>;
@@ -51,6 +52,7 @@ export const mockApi: HeliosApi = {
   getJobs: () => ok(fx.jobs),
   getJob: (id) => ok(fx.jobs.find((j) => j.id === id)),
   getStorageTargets: () => ok(fx.storageTargets),
+  getStorageOverview: () => ok(fx.storageOverview),
   getAlerts: () => ok(fx.alerts),
   getAuditEvents: () => ok(fx.auditEvents),
   getUsers: () => ok(fx.users),

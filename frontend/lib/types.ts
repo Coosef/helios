@@ -82,6 +82,13 @@ export interface StorageTarget {
   usedBytes: number;
   capacityBytes: number;
   status: "healthy" | "warning" | "offline";
+  // Optional presentational fields (PR-3). Optional so existing consumers (e.g. /cloud,
+  // which filters by `kind`) keep compiling unchanged.
+  region?: string;
+  encryption?: string;
+  immutable?: boolean;
+  protocol?: string;
+  throughput?: string;
 }
 
 export type AlertSeverity = "critical" | "warning" | "info";
@@ -401,4 +408,21 @@ export interface SuperOverview {
   tenants: TenantRollup[];
   regions: RegionRollup[];
   crossTenantAlerts: CrossTenantAlert[];
+}
+
+// ---- /storage bundled view model (illustrative mock) ----
+// Segment shapes are inlined (structurally compatible with charts' CapacitySegment and
+// panels' BreakdownSegment) so this domain type stays free of any component import.
+export interface StorageOverview {
+  kpis: {
+    usedBytes: number;
+    capacityBytes: number;
+    usagePct: number;
+    immutablePct: number;
+    reductionRatio: number;
+    runwayDays: number;
+  };
+  coverage: Array<{ pct: number; color: string; label?: string }>;
+  tiers: Array<{ label: string; value: number; color: string }>;
+  targets: StorageTarget[];
 }
