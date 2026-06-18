@@ -8,7 +8,7 @@ import type {
   ActivitySlice, AgentVersion, Alert, AuditEvent, DashboardInsights, DashboardSummary,
   Device, ExecutiveSummary, Financials, FleetHealth, Job, License, LocationSite,
   LocationsOverview, RegionGroup, Resilience, RestoreCenter, SecurityPostureItem,
-  SiteRollup, StorageTarget, SuperOverview, Tenant, TopRisk, Trend, User,
+  SiteRollup, StorageOverview, StorageTarget, SuperOverview, Tenant, TopRisk, Trend, User,
 } from "./types";
 
 export const tenants: Tenant[] = [
@@ -42,10 +42,10 @@ export const jobs: Job[] = [
 ];
 
 export const storageTargets: StorageTarget[] = [
-  { id: "st_helios_eu", name: "Helios Cloud · eu-central", kind: "helios_cloud", usedBytes: 4_100_000_000_000, capacityBytes: 10_000_000_000_000, status: "healthy" },
-  { id: "st_ist_qnap", name: "Istanbul QNAP", kind: "smb", usedBytes: 2_800_000_000_000, capacityBytes: 4_000_000_000_000, status: "healthy" },
-  { id: "st_belek_vault", name: "Belek Vault", kind: "sftp", usedBytes: 980_000_000_000, capacityBytes: 1_000_000_000_000, status: "warning" },
-  { id: "st_ams_minio", name: "Amsterdam MinIO", kind: "minio", usedBytes: 1_200_000_000_000, capacityBytes: 6_000_000_000_000, status: "healthy" },
+  { id: "st_helios_eu", name: "Helios Cloud · eu-central", kind: "helios_cloud", usedBytes: 4_100_000_000_000, capacityBytes: 10_000_000_000_000, status: "healthy", region: "eu-central-1", encryption: "AES-256-GCM · Helios KMS", immutable: true, protocol: "HTTPS", throughput: "1.2 GB/s" },
+  { id: "st_ist_qnap", name: "Istanbul QNAP", kind: "smb", usedBytes: 2_800_000_000_000, capacityBytes: 4_000_000_000_000, status: "healthy", region: "Istanbul, TR", encryption: "AES-256-GCM", immutable: false, protocol: "SMB 3.1.1", throughput: "920 MB/s" },
+  { id: "st_belek_vault", name: "Belek Vault", kind: "sftp", usedBytes: 980_000_000_000, capacityBytes: 1_000_000_000_000, status: "warning", region: "Antalya, TR", encryption: "AES-256-GCM", immutable: true, protocol: "SFTP", throughput: "180 MB/s" },
+  { id: "st_ams_minio", name: "Amsterdam MinIO", kind: "minio", usedBytes: 1_200_000_000_000, capacityBytes: 6_000_000_000_000, status: "healthy", region: "Amsterdam, NL", encryption: "AES-256-GCM", immutable: false, protocol: "S3", throughput: "640 MB/s" },
 ];
 
 export const alerts: Alert[] = [
@@ -298,4 +298,33 @@ export const locationsOverview: LocationsOverview = {
     cityCount: siteGroups.length,
     avgHealth: Math.round(siteRollups.reduce((s, x) => s + x.health, 0) / siteRollups.length),
   },
+};
+
+// /storage bundled view model. Used/capacity are SUMMED from the existing storageTargets
+// so the KPI strip never contradicts the per-target cards. Coverage/tier splits and the
+// reduction ratio / runway are illustrative mock figures.
+const _stUsed = storageTargets.reduce((s, t) => s + t.usedBytes, 0);
+const _stCap = storageTargets.reduce((s, t) => s + t.capacityBytes, 0);
+
+export const storageOverview: StorageOverview = {
+  kpis: {
+    usedBytes: _stUsed,
+    capacityBytes: _stCap,
+    usagePct: Math.round((_stUsed / _stCap) * 100),
+    immutablePct: 78,
+    reductionRatio: 2.75,
+    runwayDays: 134,
+  },
+  coverage: [
+    { pct: 78, color: "var(--ok)", label: "Immutable (WORM)" },
+    { pct: 18, color: "var(--info)", label: "Encrypted (mutable)" },
+    { pct: 4, color: "var(--text-2)", label: "Standard" },
+  ],
+  tiers: [
+    { label: "Hot", value: 49, color: "var(--accent)" },
+    { label: "Warm", value: 20, color: "var(--info)" },
+    { label: "Cold", value: 13, color: "var(--warn)" },
+    { label: "Archive", value: 9, color: "var(--text-2)" },
+  ],
+  targets: storageTargets,
 };

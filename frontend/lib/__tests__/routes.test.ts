@@ -25,6 +25,9 @@ const KEY_ROUTES = [
   "app/(app)/restore/page.tsx", // restore center (PR-2)
   "app/(app)/locations/page.tsx", // locations (PR-2)
   "app/(app)/super/page.tsx", // super-admin overview (PR-2)
+  "app/(app)/devices/page.tsx", // devices list (PR-3)
+  "app/(app)/devices/[id]/page.tsx", // device details (PR-3)
+  "app/(app)/storage/page.tsx", // storage (PR-3)
 ];
 
 test("key route modules exist and export a default", () => {
@@ -102,6 +105,7 @@ test("pages read data only through getApi(), never raw fixtures", () => {
   const pages = [
     "app/(app)/dashboard/page.tsx", "app/(app)/executive/page.tsx",
     "app/(app)/restore/page.tsx", "app/(app)/locations/page.tsx", "app/(app)/super/page.tsx",
+    "app/(app)/devices/page.tsx", "app/(app)/devices/[id]/page.tsx", "app/(app)/storage/page.tsx",
   ];
   for (const page of pages) {
     const src = read(page);
@@ -130,6 +134,37 @@ test("PR-2 pages (restore/locations/super) have richer compositions + honest pre
   assert.match(sup, /stat-grid/, "super has a cross-tenant KPI grid");
   assert.match(sup, /<DataTable\b/, "super renders the tenant fleet table");
   assert.match(sup, /from "@\/components\/charts"/, "super uses a shared chart primitive");
+});
+
+test("PR-3 pages (devices/device-details/storage) have richer compositions", () => {
+  const devices = read("app/(app)/devices/page.tsx");
+  assert.match(devices, /stat-grid/, "devices has a summary KPI row");
+  assert.match(devices, /\bchip\b/, "devices has the mock filter chip bar");
+  assert.match(devices, /design preview/, "devices labels its mock controls as design preview");
+  assert.match(devices, /<Meter\b/, "devices table shows health meters");
+  assert.match(devices, /deviceHealth/, "devices derives health via the shared helper");
+
+  const details = read("app/(app)/devices/[id]/page.tsx");
+  assert.match(details, /notFound\(\)/, "device details handles unknown ids with notFound()");
+  assert.match(details, /stat-grid/, "device details has a scoreboard");
+  assert.match(details, /Audit chain/, "device details keeps the audit chain");
+  assert.match(details, /prep-only/, "device details keeps the Linux prep-only note");
+
+  const storage = read("app/(app)/storage/page.tsx");
+  assert.match(storage, /Banner kind="pending"/, "storage keeps the backend-pending banner");
+  assert.match(storage, /stat-grid/, "storage has a KPI row");
+  assert.match(storage, /<CapacityBar\b/, "storage renders capacity bars");
+  assert.match(storage, /<DonutBreakdown\b/, "storage renders the tier donut");
+});
+
+test("invalid device route guards with notFound() BEFORE using the device (no crash)", () => {
+  const src = read("app/(app)/devices/[id]/page.tsx");
+  // The notFound() guard must appear before the first use of `device.` so an unknown id
+  // 404s instead of dereferencing undefined.
+  const guard = src.indexOf("notFound()");
+  const firstUse = src.search(/device\.\w/);
+  assert.ok(guard !== -1, "device details calls notFound()");
+  assert.ok(guard < firstUse, "notFound() guard precedes any device.<field> access");
 });
 
 test("no source performs real network calls (mock-only shell)", () => {
