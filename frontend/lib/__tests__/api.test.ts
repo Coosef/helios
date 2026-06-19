@@ -127,6 +127,41 @@ test("Batch-B view models (jobs/audit/settings) are served through the facade + 
   assert.ok(so.branding.accentSwatches.every((a) => a.color.startsWith("var(--")), "accent swatches are theme tokens");
 });
 
+test("Batch-B PR-2 view models (updates/licensing) — trust-accurate + advisory-only", async () => {
+  const api = getApi();
+
+  const uo = await api.getUpdatesOverview();
+  // every chain step maps ONLY to real update.* DR-06 audit eventTypes (no invented events)
+  const allowedUpdate = new Set<AuditEventType>([
+    "update.manifest_verified", "update.signature_invalid", "update.hash_mismatch",
+    "update.staged", "update.swapped", "update.health_ok", "update.rolled_back", "update.downgrade_blocked",
+  ]);
+  for (const step of uo.chain) {
+    assert.ok(step.auditEvents.length > 0, `chain step ${step.step} maps to audit events`);
+    for (const e of step.auditEvents) assert.ok(allowedUpdate.has(e), `chain event ${e} is a real update.* taxonomy member`);
+  }
+  // KPIs derived from the real devices fixture
+  const devices = await api.getDevices();
+  assert.equal(uo.kpis.rolledBack, devices.filter((d) => d.updateStatus === "rolled_back").length, "rolledBack derived from devices");
+  assert.equal(uo.rollbacks.length, devices.filter((d) => d.updateStatus === "rolled_back").length, "rollback list derived from devices");
+  assert.equal(uo.rings.length, 3, "three rollout rings (Canary/Early Adopters/Production)");
+  assert.ok(uo.rings.every((r) => r.color.startsWith("var(--")), "ring colors are theme tokens");
+  assert.ok(uo.eventTimeline.every((e) => allowedUpdate.has(e.eventType)), "event timeline uses the update.* taxonomy");
+  // AreaChart keys off series[0] length — every adoption-trend series must be equal-length.
+  assert.ok(uo.adoptionTrend.series.every((s) => s.data.length === uo.adoptionTrend.series[0].data.length), "adoption-trend series are equal length");
+
+  const lo = await api.getLicensingOverview();
+  // status catalog covers ALL SIX LicenseStatus values; exactly one is the active (real) status
+  const expectStatuses = ["valid", "expired", "not_yet_valid", "tenant_mismatch", "signature_invalid", "missing"];
+  assert.deepEqual(lo.statusCatalog.map((s) => s.status).sort(), [...expectStatuses].sort(), "status catalog covers all six LicenseStatus values");
+  assert.equal(lo.statusCatalog.filter((s) => s.active).length, 1, "exactly one status is the active/real one");
+  const lic = await api.getLicense();
+  assert.equal(lo.statusCatalog.find((s) => s.active)?.status, lic.status, "active status matches the real parsed license");
+  // advisory-only: entitlements are never enforced; no monetary/billing fields exist on the shape
+  assert.ok(lo.entitlements.every((e) => e.enforced === false), "every entitlement is advisory (not enforced)");
+  assert.ok(!JSON.stringify(lo).toLowerCase().match(/\b(mrr|arr|reseller|invoice|margin)\b/), "no Sprint-2 billing fields in licensing overview");
+});
+
 test("license is advisory-shaped (claims present; status is a known value)", async () => {
   const lic = await getApi().getLicense();
   const known = ["valid", "expired", "not_yet_valid", "tenant_mismatch", "signature_invalid", "missing"];

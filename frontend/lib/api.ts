@@ -7,8 +7,9 @@
 
 import type {
   AgentVersion, Alert, AuditEvent, AuditOverview, DashboardInsights, DashboardSummary,
-  Device, ExecutiveSummary, Job, JobsOverview, License, LocationSite, LocationsOverview,
-  RestoreCenter, SettingsOverview, StorageOverview, StorageTarget, SuperOverview, Tenant, User,
+  Device, ExecutiveSummary, Job, JobsOverview, License, LicensingOverview, LocationSite,
+  LocationsOverview, RestoreCenter, SettingsOverview, StorageOverview, StorageTarget,
+  SuperOverview, Tenant, UpdatesOverview, User,
 } from "./types";
 import * as fx from "./fixtures";
 
@@ -33,7 +34,9 @@ export interface HeliosApi {
   getAuditOverview(): Promise<AuditOverview>;
   getUsers(): Promise<User[]>;
   getAgentVersions(): Promise<AgentVersion[]>;
+  getUpdatesOverview(): Promise<UpdatesOverview>;
   getLicense(): Promise<License>;
+  getLicensingOverview(): Promise<LicensingOverview>;
   getSettingsOverview(): Promise<SettingsOverview>;
 }
 
@@ -62,7 +65,9 @@ export const mockApi: HeliosApi = {
   getAuditOverview: () => ok(fx.auditOverview),
   getUsers: () => ok(fx.users),
   getAgentVersions: () => ok(fx.agentVersions),
+  getUpdatesOverview: () => ok(fx.updatesOverview),
   getLicense: () => ok(fx.license),
+  getLicensingOverview: () => ok(fx.licensingOverview),
   getSettingsOverview: () => ok(fx.settingsOverview),
 };
 

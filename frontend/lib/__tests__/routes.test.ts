@@ -31,6 +31,8 @@ const KEY_ROUTES = [
   "app/(app)/jobs/page.tsx", // backup jobs (Batch-B PR-1)
   "app/(app)/settings/page.tsx", // settings (Batch-B PR-1)
   "app/(app)/audit/page.tsx", // audit logs (Batch-B PR-1)
+  "app/(app)/updates/page.tsx", // agent updates (Batch-B PR-2)
+  "app/(app)/licensing/page.tsx", // licensing (Batch-B PR-2)
 ];
 
 test("key route modules exist and export a default", () => {
@@ -110,6 +112,7 @@ test("pages read data only through getApi(), never raw fixtures", () => {
     "app/(app)/restore/page.tsx", "app/(app)/locations/page.tsx", "app/(app)/super/page.tsx",
     "app/(app)/devices/page.tsx", "app/(app)/devices/[id]/page.tsx", "app/(app)/storage/page.tsx",
     "app/(app)/jobs/page.tsx", "app/(app)/settings/page.tsx", "app/(app)/audit/page.tsx",
+    "app/(app)/updates/page.tsx", "app/(app)/licensing/page.tsx",
   ];
   for (const page of pages) {
     const src = read(page);
@@ -190,6 +193,29 @@ test("Batch-B pages (jobs/settings/audit) have richer compositions + honest mock
   assert.match(settings, /SettingsTabs/, "settings uses the tabbed structure");
   assert.match(settings, /Management API integration lands in Sprint 2/, "settings keeps the integrations banner verbatim");
   assert.match(settings, /getSettingsOverview/, "settings reads via the facade");
+});
+
+test("Batch-B PR-2 pages (updates/licensing) — trust-accurate + advisory-only", () => {
+  const updates = read("app/(app)/updates/page.tsx");
+  // updater chain steps must all be present (verify→decide→stage→swap→health gate→rollback come from the fixture)
+  assert.match(updates, /Updater chain/, "updates renders the updater chain");
+  assert.match(updates, /getUpdatesOverview/, "updates reads the bundled overview via the facade");
+  assert.match(updates, /stat-grid/, "updates has a KPI row");
+  assert.match(updates, /<AreaChart\b/, "updates renders the adoption trend chart");
+  assert.match(updates, /Ed25519|Signature & trust/, "updates renders the trust panel");
+  // rollout control must be a disabled preview (no real publishing)
+  assert.match(updates, /Preview · disabled|preview/, "updates marks the rollout control as preview");
+  assert.match(updates, /disabled/, "updates rollout control is disabled");
+  assert.doesNotMatch(updates, /var\(--line\)/, "updates must not use the non-existent --line token");
+
+  const licensing = read("app/(app)/licensing/page.tsx");
+  assert.match(licensing, /getLicensingOverview/, "licensing reads the bundled overview via the facade");
+  assert.match(licensing, /never enforced/, "licensing keeps advisory-only wording");
+  assert.match(licensing, /status catalog|status/i, "licensing renders the status catalog");
+  assert.match(licensing, /<AreaChart\b/, "licensing renders the quota trend chart");
+  assert.match(licensing, /Advisory/, "licensing marks entitlements as advisory");
+  // must NOT imply enforcement or pull in Sprint-2 billing
+  assert.doesNotMatch(licensing, /\b(MRR|ARR|reseller|invoice|billing)\b/i, "licensing must not include Sprint-2 billing");
 });
 
 test("settings-tabs client component holds UI state only and is hydration-safe", () => {
