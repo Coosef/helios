@@ -7,8 +7,9 @@
 import type {
   ActivitySlice, AgentVersion, Alert, AuditEvent, DashboardInsights, DashboardSummary,
   Device, ExecutiveSummary, Financials, FleetHealth, Job, License, LocationSite,
-  LocationsOverview, RegionGroup, Resilience, RestoreCenter, SecurityPostureItem,
-  SiteRollup, StorageOverview, StorageTarget, SuperOverview, Tenant, TopRisk, Trend, User,
+  AuditOverview, AuditTimelineItem, JobsOverview, LocationsOverview, RegionGroup,
+  Resilience, RestoreCenter, SecurityPostureItem, SettingsOverview, SiteRollup,
+  StorageOverview, StorageTarget, SuperOverview, Tenant, TopRisk, Trend, User,
 } from "./types";
 
 export const tenants: Tenant[] = [
@@ -327,4 +328,107 @@ export const storageOverview: StorageOverview = {
     { label: "Archive", value: 9, color: "var(--text-2)" },
   ],
   targets: storageTargets,
+};
+
+// ---- Batch-B PR-1 fixtures (jobs / audit / settings) — illustrative, mock-only.
+// KPI totals are illustrative aggregates (the 5/6-row fixtures are too small to read as a
+// product, mirroring dashboard.jobsSucceeded24h:312). Per-row tables stay backed by the
+// real jobs/auditEvents fixtures, and truthful counts are derived from them.
+
+export const jobsOverview: JobsOverview = {
+  // total = sum of the pipeline distribution below, so the KPI and donut center agree.
+  kpis: { total: 1221, running: 9, successRatePct: 98.7, failedToday: 14 },
+  pipeline: [
+    { label: "Queued", value: 11, color: "var(--text-2)" },
+    { label: "Running", value: 9, color: "var(--info)" },
+    { label: "Success", value: 1184, color: "var(--ok)" },
+    { label: "Failed", value: 14, color: "var(--crit)" },
+    { label: "Cancelled", value: 3, color: "var(--warn)" },
+  ],
+  trend: {
+    labels: ["Jun 5", "Jun 9", "Jun 13", "Jun 17"],
+    completed: [180, 176, 184, 190, 188, 192, 196, 201, 198, 205, 210, 208, 214, 219],
+    failed: [6, 3, 5, 2, 4, 3, 1, 5, 2, 3, 4, 2, 3, 5],
+  },
+  throughput: { perDayTB: 1.2, perWeekTB: 8.7, spark: [0.9, 1.0, 1.1, 1.0, 1.2, 1.3, 1.2, 1.15, 1.25, 1.2, 1.3, 1.18, 1.22, 1.2] },
+  topFailureReasons: [
+    { reason: "Storage target unreachable", count: 6, pct: 43 },
+    { reason: "Snapshot quiesce timeout", count: 4, pct: 29 },
+    { reason: "Insufficient capacity", count: 2, pct: 14 },
+    { reason: "Agent heartbeat lost", count: 2, pct: 14 },
+  ],
+};
+
+// --- audit derivations over the existing auditEvents + devices fixtures ---
+const AUDIT_ACTION: Record<string, string> = {
+  "enroll.succeeded": "Device enrolled",
+  "enroll.token_rejected": "Enrollment token rejected",
+  "update.rolled_back": "Agent update rolled back",
+  "update.health_ok": "Update health check passed",
+  "update.downgrade_blocked": "Agent downgrade blocked",
+  "spki_pin.mismatch": "SPKI pin mismatch blocked",
+};
+function auditCategory(eventType: string): string {
+  if (eventType.startsWith("enroll")) return "Enrollment";
+  if (eventType.startsWith("update")) return "Updates";
+  if (eventType.startsWith("config")) return "Configuration";
+  if (eventType.startsWith("license")) return "Licensing";
+  if (eventType.startsWith("service")) return "Service";
+  return "Security";
+}
+
+const auditTimeline: AuditTimelineItem[] = auditEvents.map((e) => ({
+  id: e.id,
+  seq: e.seq,
+  at: e.tsLocal,
+  actor: e.actor,
+  deviceHost: devices.find((d) => d.id === e.deviceId)?.host,
+  action: AUDIT_ACTION[e.eventType] ?? e.eventType,
+  detail: `${e.eventType} · ${e.outcome}`,
+  category: auditCategory(e.eventType),
+  severity: e.outcome === "success" ? "ok" : e.outcome === "failure" ? "crit" : "warn",
+  ip: `10.10.0.${e.seq % 254}`,
+}));
+
+export const auditOverview: AuditOverview = {
+  kpis: {
+    eventsToday: 247,
+    critical: auditEvents.filter((e) => e.outcome === "failure" || e.outcome === "denied").length,
+    integrityOkPct: 100,
+    retentionYears: 7,
+  },
+  integrity: { algorithm: "BLAKE3", tamperEvident: true, chainIntact: true, lastVerified: "2 min ago", verifiedBlocks: 247 },
+  timeline: auditTimeline,
+  selectedDetail: {
+    id: "au_4",
+    eventHash: "b3:9f2a4c7e1d8b…a41c5e90",
+    previousHash: "b3:3c7d02ab55f1…7f90a18e",
+    signatureValid: true,
+    chainIntact: true,
+    userAgent: "HeliosConsole/0.1.0 · macOS",
+    result: "Denied",
+  },
+};
+
+export const settingsOverview: SettingsOverview = {
+  general: { timezone: "Europe/Istanbul (TRT)", dateFormat: "YYYY-MM-DD", language: "English", organization: "Meridian Hotels" },
+  security: { mfaEnforced: true, sessionTimeout: "30 min idle", passwordPolicy: "14+ chars · rotation 90d", encryptionKms: "Helios KMS · AES-256-GCM" },
+  notifications: [
+    { channel: "Email alerts", connected: true, detail: "Critical & warning alerts to admins." },
+    { channel: "Webhook", connected: true, detail: "Custom HTTP events to your endpoint." },
+    { channel: "Slack", connected: false, detail: "Post alerts to a workspace channel." },
+    { channel: "Microsoft Teams", connected: false, detail: "Post alerts to a Teams channel." },
+  ],
+  branding: {
+    logoLabel: "Helios",
+    theme: "Dark",
+    accentName: "Helios Blue",
+    accentSwatches: [
+      { name: "Helios Blue", color: "var(--accent)" },
+      { name: "Teal", color: "var(--info)" },
+      { name: "Violet", color: "var(--ai)" },
+      { name: "Emerald", color: "var(--ok)" },
+    ],
+  },
+  about: { product: "Helios Data Protection Platform", version: "0.1.0", build: "ui-s1-polish-b", environment: "Preview · mock fixtures", copyright: "© Beyz System A.Ş." },
 };

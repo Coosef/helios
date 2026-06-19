@@ -426,3 +426,46 @@ export interface StorageOverview {
   tiers: Array<{ label: string; value: number; color: string }>;
   targets: StorageTarget[];
 }
+
+// ---- Batch-B PR-1 view models: jobs / audit / settings (all illustrative mock) ----
+
+export interface JobsOverview {
+  kpis: { total: number; running: number; successRatePct: number; failedToday: number };
+  // Pipeline status distribution for the donut. "Cancelled" has no Job.status member, so
+  // it is a mock-only aggregate here (NOT derived from Job[]).
+  pipeline: Array<{ label: "Queued" | "Running" | "Success" | "Failed" | "Cancelled"; value: number; color: string }>;
+  // 14-day trend; aligned arrays. labels are sparse (every Nth) for the x-axis.
+  trend: { labels: string[]; completed: number[]; failed: number[] };
+  throughput: { perDayTB: number; perWeekTB: number; spark: number[] };
+  topFailureReasons: Array<{ reason: string; count: number; pct: number }>;
+}
+
+export interface AuditTimelineItem {
+  id: string;
+  seq: number;
+  at: string;
+  actor: string;
+  deviceHost?: string;
+  action: string;
+  detail: string;
+  category: string;
+  severity: "ok" | "warn" | "crit" | "info";
+  ip: string;
+}
+
+export interface AuditOverview {
+  kpis: { eventsToday: number; critical: number; integrityOkPct: number; retentionYears: number };
+  integrity: { algorithm: "BLAKE3"; tamperEvident: boolean; chainIntact: boolean; lastVerified: string; verifiedBlocks: number };
+  timeline: AuditTimelineItem[];
+  // Static mock detail for the (non-flyout) drawer — cryptographic-chain display only.
+  // Hashes are deterministic display hex, never real cryptography.
+  selectedDetail: { id: string; eventHash: string; previousHash: string; signatureValid: boolean; chainIntact: boolean; userAgent: string; result: "Success" | "Denied" };
+}
+
+export interface SettingsOverview {
+  general: { timezone: string; dateFormat: string; language: string; organization: string };
+  security: { mfaEnforced: boolean; sessionTimeout: string; passwordPolicy: string; encryptionKms: string };
+  notifications: Array<{ channel: "Email alerts" | "Webhook" | "Slack" | "Microsoft Teams"; connected: boolean; detail: string }>;
+  branding: { logoLabel: string; theme: "Dark" | "Light"; accentName: string; accentSwatches: Array<{ name: string; color: string }> };
+  about: { product: string; version: string; build: string; environment: string; copyright: string };
+}
