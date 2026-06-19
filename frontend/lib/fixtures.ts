@@ -5,12 +5,14 @@
 // prototype credential placeholders.
 
 import type {
-  ActivitySlice, AgentVersion, Alert, AuditEvent, DashboardInsights, DashboardSummary,
-  Device, ExecutiveSummary, Financials, FleetHealth, Job, License, LocationSite,
-  AuditOverview, AuditTimelineItem, JobsOverview, LicensingOverview, LocationsOverview,
-  RegionGroup, Resilience, RestoreCenter, SecurityPostureItem, SettingsOverview, SiteRollup,
-  StorageOverview, StorageTarget, SuperOverview, Tenant, TopRisk, Trend, UpdatesOverview, User,
+  ActivitySlice, AgentVersion, Alert, AlertsOverview, AugmentedAlert, AugmentedUser, AuditEvent,
+  DashboardInsights, DashboardSummary, Device, ExecutiveSummary, Financials, FleetHealth, Job,
+  License, LocationSite, AuditOverview, AuditTimelineItem, JobsOverview, LicensingOverview,
+  LocationsOverview, RegionGroup, Resilience, RestoreCenter, Role, SecurityPostureItem,
+  SettingsOverview, SiteRollup, StorageOverview, StorageTarget, SuperOverview, Tenant, TopRisk,
+  Trend, UpdatesOverview, User, UsersOverview,
 } from "./types";
+import { ROLE_LEVEL, ROLES, capabilities } from "./rbac";
 
 export const tenants: Tenant[] = [
   { id: "tnt_meridian", name: "Meridian Hotels", plan: "Enterprise", color: "#2563EB" },
@@ -553,4 +555,147 @@ export const licensingOverview: LicensingOverview = {
     { at: "2027-01-31", label: "Expiry (advisory)", state: "future" },
   ],
   renewal: { issuedAt: "2026-02-01T00:00:00Z", notAfter: license.notAfter, daysToExpiry: _daysToExpiry, autoRenew: true, note: "Expiry is advisory in Sprint 1 — surfaced, never enforced." },
+};
+
+// ---- Batch-B PR-3 fixtures (user management / alerts) — illustrative, mock-only.
+// Built from the existing users/alerts/auditEvents/tenants/locations fixtures + rbac.ts.
+// Core User/Alert types are NOT mutated; augmented rows live only in these view-models.
+
+const ROLE_COLOR: Record<Role, string> = { Owner: "var(--ai)", Admin: "var(--ok)", Operator: "var(--info)", Viewer: "var(--text-2)" };
+
+// Per-user mock metadata (status/tenant/location/department/mfa) keyed by the real user id.
+const _userMeta: Record<string, { status: AugmentedUser["status"]; tenantId: string; locationId: string; department: string; mfa: boolean }> = {
+  u_1: { status: "active", tenantId: "tnt_meridian", locationId: "loc_ist", department: "Executive", mfa: true },
+  u_2: { status: "active", tenantId: "tnt_meridian", locationId: "loc_ist", department: "IT Operations", mfa: true },
+  u_3: { status: "active", tenantId: "tnt_aegis", locationId: "loc_ams", department: "Site Operations", mfa: true },
+  u_4: { status: "disabled", tenantId: "tnt_lindqvist", locationId: "loc_sto", department: "Legal", mfa: false },
+};
+
+const _augUsers: AugmentedUser[] = users.map((u) => {
+  const m = _userMeta[u.id];
+  const tenant = tenants.find((t) => t.id === m.tenantId);
+  const loc = locations.find((l) => l.id === m.locationId);
+  return {
+    id: u.id, name: u.name, email: u.email, role: u.role, lastActive: u.lastActive,
+    status: m.status, tenantId: m.tenantId, tenantName: tenant?.name ?? m.tenantId, tenantColor: tenant?.color ?? "var(--text-2)",
+    locationId: m.locationId, locationName: loc?.name, department: m.department, mfa: m.mfa,
+  };
+});
+
+const _activeUsers = _augUsers.filter((u) => u.status === "active").length;
+const _admins = users.filter((u) => u.role === "Owner" || u.role === "Admin").length;
+const _suspended = _augUsers.filter((u) => u.status === "disabled").length;
+
+export const usersOverview: UsersOverview = {
+  kpis: {
+    total: users.length,
+    active: _activeUsers,
+    administrators: _admins,
+    suspended: _suspended,
+    mfaPct: Math.round((_augUsers.filter((u) => u.mfa).length / _augUsers.length) * 100),
+  },
+  rows: _augUsers,
+  roleDistribution: ROLES.map((r) => ({ label: r, value: users.filter((u) => u.role === r).length, color: ROLE_COLOR[r] })),
+  privileges: ROLES.map((r) => {
+    const c = capabilities(r);
+    const count = users.filter((u) => u.role === r).length;
+    return { role: r, level: ROLE_LEVEL[r], count, pct: Math.round((count / users.length) * 100), color: ROLE_COLOR[r], read: c.read, write: c.write, manage: c.manage, admin: c.admin };
+  }),
+  // Illustrative invitation pipeline — invited/pending are in-flight (not yet accounts),
+  // active/disabled reconcile with the real directory rows above.
+  statusDistribution: [
+    { label: "Invited", value: 2, color: "var(--info)" },
+    { label: "Pending", value: 1, color: "var(--warn)" },
+    { label: "Active", value: _activeUsers, color: "var(--ok)" },
+    { label: "Disabled", value: _suspended, color: "var(--text-2)" },
+  ],
+  activity: auditEvents.map((e) => ({
+    id: `ua_${e.id}`,
+    actor: e.actor,
+    action: e.eventType,
+    detail: `${devices.find((d) => d.id === e.deviceId)?.host ?? e.tenantId} · ${e.outcome}`,
+    at: e.tsLocal,
+    outcome: e.outcome,
+    severity: e.outcome === "success" ? "ok" : e.outcome === "failure" ? "crit" : "warn",
+    auditId: e.id,
+  })),
+  org: {
+    tenants: tenants.map((t) => ({
+      id: t.id, name: t.name, color: t.color,
+      users: _augUsers.filter((u) => u.tenantId === t.id).length,
+      locations: locations.filter((l) => l.tenantId === t.id).length,
+    })),
+    departments: Object.values(
+      _augUsers.reduce<Record<string, { name: string; users: number; color: string }>>((acc, u) => {
+        (acc[u.department] ??= { name: u.department, users: 0, color: "var(--accent)" }).users += 1;
+        return acc;
+      }, {}),
+    ),
+    locationCount: locations.length,
+  },
+};
+
+// Per-alert mock augmentation (lifecycle state + correlation/source/category) keyed by alert id.
+const _alertMeta: Record<string, { state: AugmentedAlert["state"]; source: string; category: string; correlationId: string; occurrences: number }> = {
+  al_1: { state: "OPEN", source: "belek-fs-01", category: "Backup", correlationId: "corr_belek_storage", occurrences: 3 },
+  al_2: { state: "DEGRADED", source: "ams-vm-12", category: "Updates", correlationId: "corr_ams_update", occurrences: 1 },
+  al_3: { state: "OPEN", source: "belek-fs-01", category: "Connectivity", correlationId: "corr_belek_storage", occurrences: 2 },
+  al_4: { state: "CLOSED", source: "ist-sql-02", category: "Updates", correlationId: "corr_sql_update", occurrences: 1 },
+};
+
+const _augAlerts: AugmentedAlert[] = alerts.map((a) => ({ ...a, ..._alertMeta[a.id] }));
+const _lifecycleCount = (s: AugmentedAlert["state"]) => _augAlerts.filter((a) => a.state === s).length;
+
+export const alertsOverview: AlertsOverview = {
+  kpis: {
+    openCritical: _augAlerts.filter((a) => !a.acknowledged && a.severity === "critical").length,
+    openTotal: alerts.filter((a) => !a.acknowledged).length,
+    acknowledged: alerts.filter((a) => a.acknowledged).length,
+    resolved: 0, // illustrative — nothing fully resolved in the current sample
+    mtta: "4m 12s",
+    mttr: "38m",
+    mttd: "1m 06s",
+  },
+  rows: _augAlerts,
+  severityDistribution: [
+    { label: "Critical", value: alerts.filter((a) => a.severity === "critical").length, color: "var(--crit)" },
+    { label: "Warning", value: alerts.filter((a) => a.severity === "warning").length, color: "var(--warn)" },
+    { label: "Info", value: alerts.filter((a) => a.severity === "info").length, color: "var(--accent)" },
+  ],
+  lifecycleDistribution: [
+    { label: "OPEN", value: _lifecycleCount("OPEN"), color: "var(--crit)" },
+    { label: "DEGRADED", value: _lifecycleCount("DEGRADED"), color: "var(--warn)" },
+    { label: "RECOVERING", value: _lifecycleCount("RECOVERING"), color: "var(--info)" },
+    { label: "CLOSED", value: _lifecycleCount("CLOSED"), color: "var(--ok)" },
+    { label: "SUPPRESSED", value: _lifecycleCount("SUPPRESSED"), color: "var(--text-2)" },
+  ],
+  trend: {
+    labels: ["Jun 3", "Jun 7", "Jun 11", "Jun 15"],
+    opened: [2, 3, 1, 4, 2, 3, 2, 1, 3, 2, 4, 1, 2, 3],
+    resolved: [1, 2, 2, 3, 2, 2, 3, 1, 2, 3, 2, 2, 1, 3],
+  },
+  sources: [
+    { source: "belek-fs-01", category: "Backup / Connectivity", count: 2, pct: 50, color: "var(--crit)" },
+    { source: "ams-vm-12", category: "Updates", count: 1, pct: 25, color: "var(--warn)" },
+    { source: "ist-sql-02", category: "Updates", count: 1, pct: 25, color: "var(--accent)" },
+  ],
+  correlationGroups: [
+    { correlationId: "corr_belek_storage", title: "Belek storage saturation", rootCause: "Belek Vault at 98% capacity", memberAlertIds: ["al_1", "al_3"], members: 2, groupWaitSec: 30, bounceWindowSec: 120, state: "DEGRADED", severity: "critical" },
+    { correlationId: "corr_ams_update", title: "Amsterdam hypervisor update", rootCause: "ams-vm-12 update rolled back", memberAlertIds: ["al_2"], members: 1, groupWaitSec: 30, bounceWindowSec: 90, state: "DEGRADED", severity: "warning" },
+  ],
+  timeline: [
+    { id: "at_1", at: "2026-06-16T02:16:00Z", label: "Detected — Backup failed", detail: "correlation_id corr_belek_storage opened", severity: "crit" },
+    { id: "at_2", at: "2026-06-16T02:16:30Z", label: "Grouped — group_wait elapsed", detail: "al_1 + al_3 correlated (group_wait 30s)", severity: "warn" },
+    { id: "at_3", at: "2026-06-16T09:32:00Z", label: "Degraded — ams-vm-12 agent", detail: "correlation_id corr_ams_update", severity: "warn" },
+    { id: "at_4", at: "2026-06-16T08:00:00Z", label: "Acknowledged — update available", detail: "ist-sql-02 · al_4 closed", severity: "ok" },
+  ],
+  escalation: [
+    { tier: "Immediate", afterLabel: "0m", action: "Notify on-call engineer", channel: "PagerDuty", state: "done", color: "var(--crit)" },
+    { tier: "After 15m", afterLabel: "15m", action: "Escalate to team lead", channel: "Slack #ops", state: "current", color: "var(--warn)" },
+    { tier: "After 30m", afterLabel: "30m", action: "Page secondary on-call", channel: "Phone", state: "future", color: "var(--text-2)" },
+  ],
+  suppression: [
+    { id: "sup_1", scope: "category:License", reason: "Planned renewal window", window: "7d", matchedAlerts: 0, active: true },
+    { id: "sup_2", scope: "host:ams-app-07", reason: "Linux prep-only (not enrolled)", window: "until enrolled", matchedAlerts: 0, active: true },
+  ],
 };

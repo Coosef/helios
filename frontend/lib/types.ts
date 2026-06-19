@@ -518,3 +518,133 @@ export interface LicensingOverview {
   renewalTimeline: Array<{ at: string; label: string; state: "done" | "current" | "future" }>;
   renewal: { issuedAt: string; notAfter: string; daysToExpiry: number; autoRenew: boolean; note: string };
 }
+
+// ---- Batch-B PR-3 view models: user management / alerts (all illustrative mock) ----
+
+/** Mock enrollment/invitation lifecycle for the directory — NOT a field on core User. */
+export type UserLifecycleState = "invited" | "pending" | "active" | "disabled";
+
+/** Directory row: core User fields + mock status/tenant/location/department/mfa.
+ *  Built from `users`; never mutates the core User type. */
+export interface AugmentedUser {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  lastActive: string;
+  status: UserLifecycleState;
+  tenantId: string;
+  tenantName: string;
+  tenantColor: string;
+  locationId?: string;
+  locationName?: string;
+  department: string;
+  mfa: boolean;
+}
+
+/** Recent member action — derived from auditEvents (actor/eventType/outcome/tsLocal). */
+export interface UserActivityEntry {
+  id: string;
+  actor: string;
+  action: string;
+  detail: string;
+  at: string;
+  outcome: AuditOutcome;
+  severity: ToneLite;
+  auditId: string;
+}
+
+/** Role-distribution + privilege row. level/read/write/manage/admin MUST come from
+ *  rbac.ts (ROLE_LEVEL / capabilities); count/pct are derived from `users`. */
+export interface RolePrivilege {
+  role: Role;
+  level: number;
+  count: number;
+  pct: number;
+  color: string;
+  read: boolean;
+  write: boolean;
+  manage: boolean;
+  admin: boolean;
+}
+
+export interface UsersOverview {
+  kpis: { total: number; active: number; administrators: number; suspended: number; mfaPct: number };
+  rows: AugmentedUser[];
+  roleDistribution: Array<{ label: string; value: number; color: string }>;
+  privileges: RolePrivilege[];
+  statusDistribution: Array<{ label: "Invited" | "Pending" | "Active" | "Disabled"; value: number; color: string }>;
+  activity: UserActivityEntry[];
+  org: {
+    tenants: Array<{ id: string; name: string; color: string; users: number; locations: number }>;
+    departments: Array<{ name: string; users: number; color: string }>;
+    locationCount: number;
+  };
+}
+
+/** EXACT 5-state alert lifecycle taxonomy required by PR-3 — mock-only, NOT on core Alert. */
+export type AlertLifecycleState = "OPEN" | "DEGRADED" | "RECOVERING" | "CLOSED" | "SUPPRESSED";
+
+/** Alerts row: core Alert fields + mock lifecycle state + correlation/source/category.
+ *  Built from `alerts`; never mutates the core Alert type. */
+export interface AugmentedAlert {
+  id: string;
+  severity: AlertSeverity;
+  title: string;
+  detail: string;
+  deviceId?: string;
+  at: string;
+  acknowledged: boolean;
+  state: AlertLifecycleState;
+  source: string;
+  category: string;
+  correlationId: string;
+  occurrences: number;
+}
+
+/** Groups alerts by correlation_id. group_wait = collection window before a group notifies;
+ *  bounce_window = flap/dedup suppression window. Display-only labels, never executed. */
+export interface AlertCorrelationGroup {
+  correlationId: string;
+  title: string;
+  rootCause: string;
+  memberAlertIds: string[];
+  members: number;
+  groupWaitSec: number;
+  bounceWindowSec: number;
+  state: AlertLifecycleState;
+  severity: AlertSeverity;
+}
+
+/** Illustrative escalation-policy tier — display only, no routing executed. */
+export interface AlertEscalationTier {
+  tier: string;
+  afterLabel: string;
+  action: string;
+  channel: string;
+  state: "done" | "current" | "future";
+  color: string;
+}
+
+/** Illustrative suppression/mute rule (maps to the SUPPRESSED state) — display only. */
+export interface AlertSuppressionRule {
+  id: string;
+  scope: string;
+  reason: string;
+  window: string;
+  matchedAlerts: number;
+  active: boolean;
+}
+
+export interface AlertsOverview {
+  kpis: { openCritical: number; openTotal: number; acknowledged: number; resolved: number; mtta: string; mttr: string; mttd: string };
+  rows: AugmentedAlert[];
+  severityDistribution: Array<{ label: string; value: number; color: string }>;
+  lifecycleDistribution: Array<{ label: AlertLifecycleState; value: number; color: string }>;
+  trend: { labels: string[]; opened: number[]; resolved: number[] };
+  sources: Array<{ source: string; category: string; count: number; pct: number; color: string }>;
+  correlationGroups: AlertCorrelationGroup[];
+  timeline: Array<{ id: string; at: string; label: string; detail: string; severity: ToneLite }>;
+  escalation: AlertEscalationTier[];
+  suppression: AlertSuppressionRule[];
+}
