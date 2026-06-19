@@ -7,9 +7,9 @@
 import type {
   ActivitySlice, AgentVersion, Alert, AuditEvent, DashboardInsights, DashboardSummary,
   Device, ExecutiveSummary, Financials, FleetHealth, Job, License, LocationSite,
-  AuditOverview, AuditTimelineItem, JobsOverview, LocationsOverview, RegionGroup,
-  Resilience, RestoreCenter, SecurityPostureItem, SettingsOverview, SiteRollup,
-  StorageOverview, StorageTarget, SuperOverview, Tenant, TopRisk, Trend, User,
+  AuditOverview, AuditTimelineItem, JobsOverview, LicensingOverview, LocationsOverview,
+  RegionGroup, Resilience, RestoreCenter, SecurityPostureItem, SettingsOverview, SiteRollup,
+  StorageOverview, StorageTarget, SuperOverview, Tenant, TopRisk, Trend, UpdatesOverview, User,
 } from "./types";
 
 export const tenants: Tenant[] = [
@@ -431,4 +431,126 @@ export const settingsOverview: SettingsOverview = {
     ],
   },
   about: { product: "Helios Data Protection Platform", version: "0.1.0", build: "ui-s1-polish-b", environment: "Preview · mock fixtures", copyright: "© Beyz System A.Ş." },
+};
+
+// ---- Batch-B PR-2 fixtures (updates / licensing) — illustrative, mock-only.
+// The updater chain maps 1:1 to the real DR-06 update.* audit taxonomy; the staged-rollout
+// rings are a DISABLED preview (no real publishing). Licensing is strictly ADVISORY — every
+// figure is parsed/audited, never enforced. No billing/monetary fields (Sprint-2).
+
+const _fleetDevices = agentVersions.reduce((s, v) => s + v.devices, 0); // 48 (illustrative fleet)
+const _stableDevices = agentVersions.filter((v) => v.channel === "stable").reduce((s, v) => s + v.devices, 0);
+
+export const updatesOverview: UpdatesOverview = {
+  kpis: {
+    fleetDevices: _fleetDevices,
+    onCurrentPct: Math.round((_stableDevices / _fleetDevices) * 100),
+    updateAvailable: devices.filter((d) => d.updateStatus === "update_available").length,
+    rolledBack: devices.filter((d) => d.updateStatus === "rolled_back").length,
+    signatureFailures: 0,
+  },
+  chain: [
+    { step: "verify", auditEvents: ["update.manifest_verified", "update.signature_invalid", "update.hash_mismatch"], tone: "ok" },
+    { step: "decide", auditEvents: ["update.downgrade_blocked"], tone: "info" },
+    { step: "stage", auditEvents: ["update.staged"], tone: "info" },
+    { step: "swap", auditEvents: ["update.swapped"], tone: "info" },
+    { step: "health gate", auditEvents: ["update.health_ok"], tone: "ok" },
+    { step: "rollback", auditEvents: ["update.rolled_back"], tone: "warn" },
+  ],
+  rings: [
+    { name: "Canary", pct: 5, devices: 1, successPct: 100, rollbacks: 0, risk: "Low", status: "done", color: "var(--ok)" },
+    { name: "Early Adopters", pct: 25, devices: 2, successPct: 50, rollbacks: 1, risk: "Medium", status: "active", color: "var(--accent)" },
+    { name: "Production", pct: 70, devices: 0, successPct: 100, rollbacks: 0, risk: "Low", status: "pending", color: "var(--text-2)" },
+  ],
+  channels: [
+    { channel: "stable", versions: 1, devices: 46, color: "var(--ok)" },
+    { channel: "beta", versions: 1, devices: 2, color: "var(--info)" },
+    { channel: "dev", versions: 0, devices: 0, color: "var(--warn)" },
+  ],
+  adoption: [
+    { label: "0.1.0 (stable)", value: 46, color: "var(--ok)" },
+    { label: "0.1.1-rc1 (beta)", value: 2, color: "var(--info)" },
+  ],
+  adoptionTrend: {
+    labels: ["Jun 5", "Jun 9", "Jun 13", "Jun 17"],
+    series: [
+      { version: "0.1.0", color: "var(--ok)", data: [40, 41, 42, 43, 44, 45, 45, 46] },
+      { version: "0.1.1-rc1", color: "var(--info)", data: [0, 0, 1, 1, 1, 2, 2, 2] },
+    ],
+  },
+  eventTimeline: [
+    { id: "ue_1", at: "2026-06-16T03:00:00Z", eventType: "update.manifest_verified", tone: "ok", detail: "Ed25519 signature + JCS manifest hash verified for 0.1.1-rc1." },
+    { id: "ue_2", at: "2026-06-16T03:01:00Z", eventType: "update.staged", tone: "info", detail: "New build staged beside the running version." },
+    { id: "ue_3", at: "2026-06-16T03:02:00Z", eventType: "update.swapped", tone: "info", detail: "Atomic swap to the staged build." },
+    { id: "ue_4", at: "2026-06-16T08:57:51Z", eventType: "update.health_ok", tone: "ok", detail: "ist-dc-01 passed the 90s post-swap health gate." },
+    { id: "ue_5", at: "2026-06-16T09:31:04Z", eventType: "update.rolled_back", tone: "warn", detail: "ams-vm-12 failed the health gate — previous build restored." },
+    { id: "ue_6", at: "2026-06-16T07:41:17Z", eventType: "update.downgrade_blocked", tone: "warn", detail: "ist-sql-02 downgrade attempt blocked by anti-rollback." },
+  ],
+  trust: [
+    { label: "Ed25519 signature", detail: "Manifest signed with the Helios code-signing key.", ok: true },
+    { label: "JCS-canonicalized manifest", detail: "RFC 8785 canonical JSON hashed before verify.", ok: true },
+    { label: "Anti-rollback", detail: "Downgrade to an older version is blocked (update.downgrade_blocked).", ok: true },
+    { label: "90s health gate", detail: "Post-swap health check; failure triggers rollback.", ok: true },
+    { label: "Rollback-restore", detail: "Previous signed build restored automatically on health-gate failure.", ok: true },
+  ],
+  rollbacks: devices.filter((d) => d.updateStatus === "rolled_back").map((d) => ({
+    deviceHost: d.host, reason: "Health gate failed after swap", at: d.lastSeen, auditEvent: "update.rolled_back" as const,
+  })),
+};
+
+// Licensing — ADVISORY only. daysToExpiry is a fixed constant (notAfter 2027-01-31 vs the
+// 2026-06-19 reference date ≈ 226 days) so the fixture stays deterministic.
+const _daysToExpiry = 226;
+
+export const licensingOverview: LicensingOverview = {
+  kpis: {
+    plan: license.plan,
+    seatsUsed: license.seatsUsed,
+    seats: license.seats,
+    seatPct: Math.round((license.seatsUsed / license.seats) * 100),
+    quotaUsedBytes: license.quotaUsedBytes,
+    quotaBytes: license.quotaBytes,
+    quotaPct: Math.round((license.quotaUsedBytes / license.quotaBytes) * 100),
+    status: license.status,
+    daysToExpiry: _daysToExpiry,
+  },
+  warningThresholds: [80, 90, 100],
+  statusCatalog: [
+    { status: "valid", active: true, advisoryAction: "Signature verified — operations continue normally." },
+    { status: "expired", active: false, advisoryAction: "Surfaced to audit; backups are NOT blocked (advisory)." },
+    { status: "not_yet_valid", active: false, advisoryAction: "Surfaced to audit only; never enforced." },
+    { status: "tenant_mismatch", active: false, advisoryAction: "Audited as an anomaly; not enforced in Sprint 1." },
+    { status: "signature_invalid", active: false, advisoryAction: "Audited (license.signature_invalid); not enforced.", auditEvent: "license.signature_invalid" },
+    { status: "missing", active: false, advisoryAction: "Audited as an anomaly; operations continue (advisory)." },
+  ],
+  entitlements: [
+    { feature: "Plan", limit: license.plan, used: "—", enforced: false },
+    { feature: "Seats", limit: String(license.seats), used: String(license.seatsUsed), enforced: false },
+    { feature: "Storage quota", limit: "10.0 TB", used: "7.0 TB", enforced: false },
+    { feature: "Continuous backup", limit: "Included", used: "Active", enforced: false },
+    { feature: "Immutable storage", limit: "Included", used: "Active", enforced: false },
+  ],
+  seatBreakdown: [
+    { label: "Allocated", value: license.seatsUsed, color: "var(--accent)" },
+    { label: "Available", value: license.seats - license.seatsUsed, color: "var(--text-2)" },
+  ],
+  quotaTrend: {
+    labels: ["Mar", "Apr", "May", "Jun"],
+    data: [52, 58, 63, 67, 68, 69, 70, 70],
+  },
+  auditTimeline: [
+    { id: "lau_1", at: "2026-06-16T03:00:00Z", eventType: "license.signature_invalid", outcome: "failure", detail: "Illustrative: the parser flagged an invalid signature on a re-issued token — surfaced to audit, not enforced.", severity: "warn" },
+  ],
+  history: [
+    { at: "2026-02-01", event: "License issued", detail: "Enterprise plan · 50 seats · 10 TB quota." },
+    { at: "2026-04-15", event: "Seat true-up", detail: "Seat allocation reviewed — advisory, no change blocked." },
+    { at: "2026-06-16", event: "Signature anomaly (illustrative)", detail: "Re-issued token signature flagged; surfaced to audit only." },
+  ],
+  renewalTimeline: [
+    { at: "2026-02-01", label: "Issued", state: "done" },
+    { at: "2026-06-19", label: "Current", state: "current" },
+    { at: "2027-01-01", label: "Renewal window opens", state: "future" },
+    { at: "2027-01-31", label: "Expiry (advisory)", state: "future" },
+  ],
+  renewal: { issuedAt: "2026-02-01T00:00:00Z", notAfter: license.notAfter, daysToExpiry: _daysToExpiry, autoRenew: true, note: "Expiry is advisory in Sprint 1 — surfaced, never enforced." },
 };

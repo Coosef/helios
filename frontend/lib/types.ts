@@ -469,3 +469,52 @@ export interface SettingsOverview {
   branding: { logoLabel: string; theme: "Dark" | "Light"; accentName: string; accentSwatches: Array<{ name: string; color: string }> };
   about: { product: string; version: string; build: string; environment: string; copyright: string };
 }
+
+// ---- Batch-B PR-2 view models: updates / licensing (all illustrative mock) ----
+
+type ToneLite = "ok" | "warn" | "crit" | "info";
+
+export interface UpdatesOverview {
+  // KPI strip — derived from the devices fixture (truthful counts); illustrative aggregates noted.
+  kpis: { fleetDevices: number; onCurrentPct: number; updateAvailable: number; rolledBack: number; signatureFailures: number };
+  // Updater chain mapped 1:1 to the REAL DR-06 audit eventTypes — the source of trust truth.
+  // (icon is mapped in the page from `step`, so this type imports nothing from components.)
+  chain: Array<{ step: string; auditEvents: AuditEventType[]; tone: ToneLite }>;
+  // Staged-rollout rings (Canary / Early Adopters / Production) — DISABLED preview mock.
+  rings: Array<{ name: string; pct: number; devices: number; successPct: number; rollbacks: number; risk: "Low" | "Medium" | "High"; status: "pending" | "active" | "done"; color: string }>;
+  // Release channels from agentVersions.channel.
+  channels: Array<{ channel: "stable" | "beta" | "dev"; versions: number; devices: number; color: string }>;
+  // Version-adoption donut segments over agentVersions.devices.
+  adoption: Array<{ label: string; value: number; color: string }>;
+  // Per-version adoption trend (aligned series for an AreaChart).
+  adoptionTrend: { labels: string[]; series: Array<{ version: string; color: string; data: number[] }> };
+  // DR-06 update-event timeline (illustrative, drawn from the update.* taxonomy).
+  eventTimeline: Array<{ id: string; at: string; eventType: AuditEventType; tone: ToneLite; detail: string }>;
+  // Trust panel — Ed25519, JCS-canonicalized manifest, anti-rollback, health gate, rollback-restore.
+  trust: Array<{ label: string; detail: string; ok: boolean }>;
+  // Failed health-gate / rollback list — derived from devices.updateStatus==='rolled_back'.
+  rollbacks: Array<{ deviceHost: string; reason: string; at: string; auditEvent: AuditEventType }>;
+}
+
+export interface LicensingOverview {
+  // All advisory; none enforced.
+  kpis: { plan: string; seatsUsed: number; seats: number; seatPct: number; quotaUsedBytes: number; quotaBytes: number; quotaPct: number; status: LicenseStatus; daysToExpiry: number };
+  // Advisory warning markers on the meters (e.g. 80/90/100) — surfaced, never block.
+  warningThresholds: number[];
+  // ALL SIX LicenseStatus values. active=true only on this tenant's real status; the rest are
+  // illustrative parser-detected anomaly states that are NEVER blocked on.
+  statusCatalog: Array<{ status: LicenseStatus; active: boolean; advisoryAction: string; auditEvent?: AuditEventType }>;
+  // Plan features/limits — advisory caps, not enforced quotas.
+  entitlements: Array<{ feature: string; limit: string; used: string; enforced: false }>;
+  // Seat-allocation breakdown (donut/capacity segments).
+  seatBreakdown: Array<{ label: string; value: number; color: string }>;
+  // Quota-consumption trend (AreaChart series, % of quota over time).
+  quotaTrend: { labels: string[]; data: number[] };
+  // License audit-trail preview — derives license.signature_invalid from the DR-06 taxonomy.
+  auditTimeline: Array<{ id: string; at: string; eventType: AuditEventType; outcome: AuditOutcome; detail: string; severity: ToneLite }>;
+  // Tenant license history.
+  history: Array<{ at: string; event: string; detail: string }>;
+  // Renewal/expiry milestone timeline.
+  renewalTimeline: Array<{ at: string; label: string; state: "done" | "current" | "future" }>;
+  renewal: { issuedAt: string; notAfter: string; daysToExpiry: number; autoRenew: boolean; note: string };
+}
