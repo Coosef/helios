@@ -162,6 +162,41 @@ test("Batch-B PR-2 view models (updates/licensing) — trust-accurate + advisory
   assert.ok(!JSON.stringify(lo).toLowerCase().match(/\b(mrr|arr|reseller|invoice|margin)\b/), "no Sprint-2 billing fields in licensing overview");
 });
 
+test("Batch-B PR-3 view models (users/alerts) — RBAC-sourced + lifecycle-accurate", async () => {
+  const api = getApi();
+  const { ROLE_LEVEL, capabilities } = await import("../rbac");
+
+  const uo = await api.getUsersOverview();
+  const users = await api.getUsers();
+  // KPIs derived from the real users fixture
+  assert.equal(uo.kpis.total, users.length, "total = real user count");
+  assert.equal(uo.kpis.administrators, users.filter((u) => u.role === "Owner" || u.role === "Admin").length, "administrators = Owner+Admin");
+  assert.equal(uo.rows.length, users.length, "directory rows map 1:1 to real users");
+  // privilege rows MUST match rbac.ts (single source of truth) — no parallel privilege model
+  for (const p of uo.privileges) {
+    const c = capabilities(p.role);
+    assert.equal(p.level, ROLE_LEVEL[p.role], `${p.role} level matches rbac.ts`);
+    assert.deepEqual([p.read, p.write, p.manage, p.admin], [c.read, c.write, c.manage, c.admin], `${p.role} capabilities match rbac.ts`);
+  }
+  assert.ok(uo.activity.length > 0 && uo.org.tenants.length > 0, "activity + org structure present");
+
+  const ao = await api.getAlertsOverview();
+  const alerts = await api.getAlerts();
+  // open/ack KPIs derive truthfully from alerts.acknowledged (distinct from the lifecycle taxonomy)
+  assert.equal(ao.kpis.openTotal, alerts.filter((a) => !a.acknowledged).length, "openTotal = unacknowledged count");
+  assert.equal(ao.kpis.acknowledged, alerts.filter((a) => a.acknowledged).length, "acknowledged = acknowledged count");
+  // lifecycle distribution is EXACTLY the 5-state taxonomy
+  assert.deepEqual(ao.lifecycleDistribution.map((s) => s.label), ["OPEN", "DEGRADED", "RECOVERING", "CLOSED", "SUPPRESSED"], "exact 5-state lifecycle taxonomy");
+  assert.ok(ao.rows.every((r) => ["OPEN", "DEGRADED", "RECOVERING", "CLOSED", "SUPPRESSED"].includes(r.state)), "every alert row has a valid lifecycle state");
+  // correlation groups carry the display-only correlation concepts; members reference real alert ids
+  const alertIds = new Set(alerts.map((a) => a.id));
+  for (const g of ao.correlationGroups) {
+    assert.ok(g.groupWaitSec > 0 && g.bounceWindowSec > 0, "group has group_wait + bounce_window");
+    assert.ok(g.memberAlertIds.every((id) => alertIds.has(id)), "correlation members reference real alert ids");
+  }
+  assert.ok(ao.trend.opened.length === ao.trend.resolved.length, "alert trend series aligned");
+});
+
 test("license is advisory-shaped (claims present; status is a known value)", async () => {
   const lic = await getApi().getLicense();
   const known = ["valid", "expired", "not_yet_valid", "tenant_mismatch", "signature_invalid", "missing"];

@@ -6,10 +6,10 @@
 // Screens MUST import data only through getApi(), never from lib/fixtures directly.
 
 import type {
-  AgentVersion, Alert, AuditEvent, AuditOverview, DashboardInsights, DashboardSummary,
-  Device, ExecutiveSummary, Job, JobsOverview, License, LicensingOverview, LocationSite,
-  LocationsOverview, RestoreCenter, SettingsOverview, StorageOverview, StorageTarget,
-  SuperOverview, Tenant, UpdatesOverview, User,
+  AgentVersion, Alert, AlertsOverview, AuditEvent, AuditOverview, DashboardInsights,
+  DashboardSummary, Device, ExecutiveSummary, Job, JobsOverview, License, LicensingOverview,
+  LocationSite, LocationsOverview, RestoreCenter, SettingsOverview, StorageOverview,
+  StorageTarget, SuperOverview, Tenant, UpdatesOverview, User, UsersOverview,
 } from "./types";
 import * as fx from "./fixtures";
 
@@ -30,9 +30,11 @@ export interface HeliosApi {
   getStorageTargets(): Promise<StorageTarget[]>;
   getStorageOverview(): Promise<StorageOverview>;
   getAlerts(): Promise<Alert[]>;
+  getAlertsOverview(): Promise<AlertsOverview>;
   getAuditEvents(): Promise<AuditEvent[]>;
   getAuditOverview(): Promise<AuditOverview>;
   getUsers(): Promise<User[]>;
+  getUsersOverview(): Promise<UsersOverview>;
   getAgentVersions(): Promise<AgentVersion[]>;
   getUpdatesOverview(): Promise<UpdatesOverview>;
   getLicense(): Promise<License>;
@@ -61,9 +63,11 @@ export const mockApi: HeliosApi = {
   getStorageTargets: () => ok(fx.storageTargets),
   getStorageOverview: () => ok(fx.storageOverview),
   getAlerts: () => ok(fx.alerts),
+  getAlertsOverview: () => ok(fx.alertsOverview),
   getAuditEvents: () => ok(fx.auditEvents),
   getAuditOverview: () => ok(fx.auditOverview),
   getUsers: () => ok(fx.users),
+  getUsersOverview: () => ok(fx.usersOverview),
   getAgentVersions: () => ok(fx.agentVersions),
   getUpdatesOverview: () => ok(fx.updatesOverview),
   getLicense: () => ok(fx.license),

@@ -33,6 +33,8 @@ const KEY_ROUTES = [
   "app/(app)/audit/page.tsx", // audit logs (Batch-B PR-1)
   "app/(app)/updates/page.tsx", // agent updates (Batch-B PR-2)
   "app/(app)/licensing/page.tsx", // licensing (Batch-B PR-2)
+  "app/(app)/users/page.tsx", // user management (Batch-B PR-3)
+  "app/(app)/alerts/page.tsx", // alerts (Batch-B PR-3)
 ];
 
 test("key route modules exist and export a default", () => {
@@ -113,6 +115,7 @@ test("pages read data only through getApi(), never raw fixtures", () => {
     "app/(app)/devices/page.tsx", "app/(app)/devices/[id]/page.tsx", "app/(app)/storage/page.tsx",
     "app/(app)/jobs/page.tsx", "app/(app)/settings/page.tsx", "app/(app)/audit/page.tsx",
     "app/(app)/updates/page.tsx", "app/(app)/licensing/page.tsx",
+    "app/(app)/users/page.tsx", "app/(app)/alerts/page.tsx",
   ];
   for (const page of pages) {
     const src = read(page);
@@ -193,6 +196,28 @@ test("Batch-B pages (jobs/settings/audit) have richer compositions + honest mock
   assert.match(settings, /SettingsTabs/, "settings uses the tabbed structure");
   assert.match(settings, /Management API integration lands in Sprint 2/, "settings keeps the integrations banner verbatim");
   assert.match(settings, /getSettingsOverview/, "settings reads via the facade");
+});
+
+test("Batch-B PR-3 pages (users/alerts) — RBAC + alert-lifecycle accurate, display-only", () => {
+  const users = read("app/(app)/users/page.tsx");
+  assert.match(users, /getUsersOverview/, "users reads the bundled overview via the facade");
+  assert.match(users, /stat-grid/, "users has a KPI strip");
+  assert.match(users, /Privilege matrix|capabilities|RolePrivilege/, "users renders the RBAC privilege matrix");
+  assert.match(users, /authoritative source of truth/, "users keeps the UI-gating-only disclaimer");
+  assert.match(users, /<DonutBreakdown\b/, "users renders the role-distribution donut");
+
+  const alerts = read("app/(app)/alerts/page.tsx");
+  assert.match(alerts, /getAlertsOverview/, "alerts reads the bundled overview via the facade");
+  // the EXACT 5-state lifecycle taxonomy
+  for (const s of ["OPEN", "DEGRADED", "RECOVERING", "CLOSED", "SUPPRESSED"]) {
+    assert.match(alerts, new RegExp(`\\b${s}\\b`), `alerts references the ${s} lifecycle state`);
+  }
+  // correlation concepts present
+  assert.match(alerts, /correlation_id|correlationId/, "alerts references correlation_id");
+  assert.match(alerts, /group_wait|groupWait/, "alerts references group_wait");
+  assert.match(alerts, /bounce_window|bounceWindow/, "alerts references bounce_window");
+  assert.match(alerts, /<AreaChart\b/, "alerts renders the trend chart");
+  assert.match(alerts, /no real-time|display-only/, "alerts states it is display-only / no real-time");
 });
 
 test("Batch-B PR-2 pages (updates/licensing) — trust-accurate + advisory-only", () => {
