@@ -6,9 +6,9 @@
 // Screens MUST import data only through getApi(), never from lib/fixtures directly.
 
 import type {
-  AgentVersion, Alert, AuditEvent, DashboardInsights, DashboardSummary, Device,
-  ExecutiveSummary, Job, License, LocationSite, LocationsOverview, RestoreCenter,
-  StorageOverview, StorageTarget, SuperOverview, Tenant, User,
+  AgentVersion, Alert, AuditEvent, AuditOverview, DashboardInsights, DashboardSummary,
+  Device, ExecutiveSummary, Job, JobsOverview, License, LocationSite, LocationsOverview,
+  RestoreCenter, SettingsOverview, StorageOverview, StorageTarget, SuperOverview, Tenant, User,
 } from "./types";
 import * as fx from "./fixtures";
 
@@ -25,13 +25,16 @@ export interface HeliosApi {
   getDevice(id: string): Promise<Device | undefined>;
   getJobs(): Promise<Job[]>;
   getJob(id: string): Promise<Job | undefined>;
+  getJobsOverview(): Promise<JobsOverview>;
   getStorageTargets(): Promise<StorageTarget[]>;
   getStorageOverview(): Promise<StorageOverview>;
   getAlerts(): Promise<Alert[]>;
   getAuditEvents(): Promise<AuditEvent[]>;
+  getAuditOverview(): Promise<AuditOverview>;
   getUsers(): Promise<User[]>;
   getAgentVersions(): Promise<AgentVersion[]>;
   getLicense(): Promise<License>;
+  getSettingsOverview(): Promise<SettingsOverview>;
 }
 
 // Resolve immediately — these are local fixtures. The Promise shape is intentional so
@@ -51,13 +54,16 @@ export const mockApi: HeliosApi = {
   getDevice: (id) => ok(fx.devices.find((d) => d.id === id)),
   getJobs: () => ok(fx.jobs),
   getJob: (id) => ok(fx.jobs.find((j) => j.id === id)),
+  getJobsOverview: () => ok(fx.jobsOverview),
   getStorageTargets: () => ok(fx.storageTargets),
   getStorageOverview: () => ok(fx.storageOverview),
   getAlerts: () => ok(fx.alerts),
   getAuditEvents: () => ok(fx.auditEvents),
+  getAuditOverview: () => ok(fx.auditOverview),
   getUsers: () => ok(fx.users),
   getAgentVersions: () => ok(fx.agentVersions),
   getLicense: () => ok(fx.license),
+  getSettingsOverview: () => ok(fx.settingsOverview),
 };
 
 /** The active API. Today: always the mock. Future: choose the generated client. */

@@ -101,6 +101,32 @@ test("deviceHealth derives an in-range score + consistent grade/tone for every d
   if (healthy && weak) assert.ok(deviceHealth(healthy).score > deviceHealth(weak).score, "healthy device outscores weak device");
 });
 
+test("Batch-B view models (jobs/audit/settings) are served through the facade + coherent", async () => {
+  const api = getApi();
+
+  const jo = await api.getJobsOverview();
+  assert.ok(jo.kpis.total > 0 && jo.kpis.failedToday >= 0, "jobs KPIs present");
+  // KPI total equals the pipeline sum (so KPI and donut center agree)
+  assert.equal(jo.kpis.total, jo.pipeline.reduce((s, p) => s + p.value, 0), "total = pipeline sum");
+  assert.equal(jo.trend.completed.length, jo.trend.failed.length, "trend series aligned");
+  assert.ok(jo.trend.completed.length > 1 && jo.topFailureReasons.length > 0, "trend + failure reasons present");
+  assert.ok(jo.pipeline.every((p) => p.color.startsWith("var(--")), "pipeline colors are theme tokens");
+
+  const ao = await api.getAuditOverview();
+  // critical KPI is DERIVED from the real auditEvents (denied/failure outcomes)
+  const events = await api.getAuditEvents();
+  const expectedCritical = events.filter((e) => e.outcome === "failure" || e.outcome === "denied").length;
+  assert.equal(ao.kpis.critical, expectedCritical, "critical KPI derived from real audit outcomes");
+  assert.equal(ao.timeline.length, events.length, "timeline derived 1:1 from audit events");
+  assert.equal(ao.integrity.algorithm, "BLAKE3", "integrity uses BLAKE3 vocabulary");
+  assert.ok(ao.timeline.every((t) => ["ok", "warn", "crit", "info"].includes(t.severity)), "timeline severities valid");
+
+  const so = await api.getSettingsOverview();
+  assert.ok(so.about.version.length > 0 && so.about.copyright.includes("Beyz System"), "about carries version + company");
+  assert.equal(so.notifications.length, 4, "four notification channels");
+  assert.ok(so.branding.accentSwatches.every((a) => a.color.startsWith("var(--")), "accent swatches are theme tokens");
+});
+
 test("license is advisory-shaped (claims present; status is a known value)", async () => {
   const lic = await getApi().getLicense();
   const known = ["valid", "expired", "not_yet_valid", "tenant_mismatch", "signature_invalid", "missing"];

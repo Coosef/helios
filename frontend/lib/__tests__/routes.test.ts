@@ -28,6 +28,9 @@ const KEY_ROUTES = [
   "app/(app)/devices/page.tsx", // devices list (PR-3)
   "app/(app)/devices/[id]/page.tsx", // device details (PR-3)
   "app/(app)/storage/page.tsx", // storage (PR-3)
+  "app/(app)/jobs/page.tsx", // backup jobs (Batch-B PR-1)
+  "app/(app)/settings/page.tsx", // settings (Batch-B PR-1)
+  "app/(app)/audit/page.tsx", // audit logs (Batch-B PR-1)
 ];
 
 test("key route modules exist and export a default", () => {
@@ -106,6 +109,7 @@ test("pages read data only through getApi(), never raw fixtures", () => {
     "app/(app)/dashboard/page.tsx", "app/(app)/executive/page.tsx",
     "app/(app)/restore/page.tsx", "app/(app)/locations/page.tsx", "app/(app)/super/page.tsx",
     "app/(app)/devices/page.tsx", "app/(app)/devices/[id]/page.tsx", "app/(app)/storage/page.tsx",
+    "app/(app)/jobs/page.tsx", "app/(app)/settings/page.tsx", "app/(app)/audit/page.tsx",
   ];
   for (const page of pages) {
     const src = read(page);
@@ -165,6 +169,35 @@ test("invalid device route guards with notFound() BEFORE using the device (no cr
   const firstUse = src.search(/device\.\w/);
   assert.ok(guard !== -1, "device details calls notFound()");
   assert.ok(guard < firstUse, "notFound() guard precedes any device.<field> access");
+});
+
+test("Batch-B pages (jobs/settings/audit) have richer compositions + honest mock labels", () => {
+  const jobs = read("app/(app)/jobs/page.tsx");
+  assert.match(jobs, /Banner kind="pending"/, "jobs keeps the backend-pending banner");
+  assert.match(jobs, /stat-grid/, "jobs has a KPI row");
+  assert.match(jobs, /<DonutBreakdown\b/, "jobs renders the pipeline donut");
+  assert.match(jobs, /<AreaChart\b/, "jobs renders the 14-day trend");
+  assert.match(jobs, /getJobsOverview/, "jobs reads the bundled overview via the facade");
+
+  const audit = read("app/(app)/audit/page.tsx");
+  assert.match(audit, /Banner kind="preview"/, "audit keeps the preview banner");
+  assert.match(audit, /stat-grid/, "audit has a KPI row");
+  assert.match(audit, /Integrity chain/, "audit renders the integrity panel");
+  assert.match(audit, /className="tl"/, "audit renders the event timeline");
+  assert.match(audit, /design preview/, "audit labels its mock filter controls");
+
+  const settings = read("app/(app)/settings/page.tsx");
+  assert.match(settings, /SettingsTabs/, "settings uses the tabbed structure");
+  assert.match(settings, /Management API integration lands in Sprint 2/, "settings keeps the integrations banner verbatim");
+  assert.match(settings, /getSettingsOverview/, "settings reads via the facade");
+});
+
+test("settings-tabs client component holds UI state only and is hydration-safe", () => {
+  const tabs = read("components/settings-tabs.tsx");
+  assert.match(tabs, /^"use client";/, "settings-tabs is a client component");
+  // UI-state only — must not fetch, import fixtures, or use nondeterministic render inputs.
+  assert.doesNotMatch(tabs, /Math\.random\s*\(|Date\.now\s*\(|new Date\(/, "no nondeterministic render inputs (hydration-safe)");
+  assert.doesNotMatch(tabs, /lib\/fixtures|getApi|fetch\s*\(/, "client tabs hold no data — UI state only");
 });
 
 test("no source performs real network calls (mock-only shell)", () => {
